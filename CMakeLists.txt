@@ -58,8 +58,7 @@ include_directories( ${FMS_INCLUDE_DIRS} )
 
 list( APPEND FV3_TPLS NetCDF fms )
 
-set( FV3_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_BINARY_DIR}/src
-                       ${CMAKE_Fortran_MODULE_DIRECTORY} )
+set( FV3_INCLUDE_DIRS ${CMAKE_Fortran_MODULE_DIRECTORY} )
 set( FV3_LIBRARIES fv3 )
 
 get_directory_property( FV3_DEFINITIONS COMPILE_DEFINITIONS )
