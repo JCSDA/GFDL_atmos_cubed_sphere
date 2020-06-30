@@ -136,7 +136,7 @@ ecbuild_add_library( TARGET          fv3
 
 #GFortran-10 support
 if(CMAKE_Fortran_COMPILER_ID MATCHES GNU AND CMAKE_Fortran_COMPILER_VERSION VERSION_GREATER_EQUAL 10)
-    target_compile_options(fv3 PRIVATE -fallow-argument-mismatch)
+    target_compile_options(fv3 PRIVATE -fallow-argument-mismatch -fallow-invalid-boz)
 endif()
 
 ####################################################################################################
