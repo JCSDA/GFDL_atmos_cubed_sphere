@@ -38,6 +38,9 @@ set( FV3_LINKER_LANGUAGE Fortran )
 # Dependencies
 ####################################################################################################
 
+#openMP
+find_package( OpenMP REQUIRED COMPONENTS Fortran )
+
 # NetCDF
 set( NETCDF_F90 ON CACHE BOOL "Compile with Fortran NetCDF" )
 find_package( NetCDF REQUIRED )
@@ -129,7 +132,7 @@ list( APPEND fv3_src_files
 
 ecbuild_add_library( TARGET          fv3
                      SOURCES         ${fv3_src_files}
-                     LIBS            fms ${NETCDF_LIBRARIES} MPI::MPI_Fortran
+                     LIBS            fms ${NETCDF_LIBRARIES} MPI::MPI_Fortran OpenMP::OpenMP_Fortran
                      INSTALL_HEADERS LISTED
                      LINKER_LANGUAGE ${FV3_LINKER_LANGUAGE}
                    )
