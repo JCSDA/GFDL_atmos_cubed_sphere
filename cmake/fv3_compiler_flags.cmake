@@ -51,7 +51,7 @@ if (FV3_PRECISION MATCHES "DOUBLE" OR NOT FV3_PRECISION)
 else()
 
   # Overload definition similar to FMS
-  add_definitions( -OVERLOAD_R4 -DSINGLE_FV )
+  add_definitions( -DOVERLOAD_R4 -DSINGLE_FV )
 
 endif()
 
