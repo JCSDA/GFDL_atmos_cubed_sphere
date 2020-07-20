@@ -38,6 +38,9 @@ set( FV3_LINKER_LANGUAGE Fortran )
 # Dependencies
 ####################################################################################################
 
+#openMP
+find_package( OpenMP COMPONENTS Fortran )
+
 # NetCDF
 set( NETCDF_F90 ON CACHE BOOL "Compile with Fortran NetCDF" )
 find_package( NetCDF REQUIRED )
@@ -49,7 +52,7 @@ ecbuild_include_mpi()
 link_libraries(${MPI_CXX_LIBRARIES} ${MPI_Fortran_LIBRARIES})
 
 # FMS
-ecbuild_use_package( PROJECT fms )
+ecbuild_use_package( PROJECT fms REQUIRED )
 include_directories( ${FMS_INCLUDE_DIRS} )
 
 ####################################################################################################
@@ -134,9 +137,13 @@ ecbuild_add_library( TARGET          fv3
                      LINKER_LANGUAGE ${FV3_LINKER_LANGUAGE}
                    )
 
+if(OpenMP_Fortran_FOUND)
+  target_link_libraries(fv3 OpenMP::OpenMP_Fortran)
+endif()
+
 #GFortran-10 support
 if(CMAKE_Fortran_COMPILER_ID MATCHES GNU AND CMAKE_Fortran_COMPILER_VERSION VERSION_GREATER_EQUAL 10)
-    target_compile_options(fv3 PRIVATE -fallow-argument-mismatch -fallow-invalid-boz)
+  target_compile_options(fv3 PRIVATE -fallow-argument-mismatch -fallow-invalid-boz)
 endif()
 
 ####################################################################################################
