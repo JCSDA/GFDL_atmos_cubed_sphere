@@ -201,6 +201,7 @@ module external_ic_mod
    character (len = 80) :: source   ! This tells what the input source was for the data
    character(len=27), parameter :: source_fv3gfs = 'FV3GFS GAUSSIAN NEMSIO FILE'
   public get_external_ic, get_cubed_sphere_terrain
+  public remap_scalar, remap_dwinds
 
 ! version number of this module
 ! Include variable "version" to be written to log file.
