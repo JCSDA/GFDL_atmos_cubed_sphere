@@ -998,8 +998,6 @@ contains
       jsd = Atm%bd%jsd
       jed = Atm%bd%jed
 
-      deg2rad = pi/180.
-
       npz = Atm%npz
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
       if(is_master()) write(*,*) 'ntracers = ', ntracers, 'ntprog = ',ntprog
@@ -1562,8 +1560,6 @@ contains
       ied = Atm%bd%ied
       jsd = Atm%bd%jsd
       jed = Atm%bd%jed
-
-      deg2rad = pi/180.
 
       npz = Atm%npz
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
