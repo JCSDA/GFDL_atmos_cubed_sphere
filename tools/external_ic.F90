@@ -197,10 +197,11 @@ module external_ic_mod
 
    real, parameter:: zvir = rvgas/rdgas - 1.
    real(kind=R_GRID), parameter :: cnst_0p20=0.20d0
-   real :: deg2rad
-   character (len = 80) :: source   ! This tells what the input source was for the data
+   real, parameter :: deg2rad = pi/180.
+   character (len = 80), public :: source   ! This tells what the input source was for the data
    character(len=27), parameter :: source_fv3gfs = 'FV3GFS GAUSSIAN NEMSIO FILE'
   public get_external_ic, get_cubed_sphere_terrain
+  public remap_scalar, remap_dwinds
 
 ! version number of this module
 ! Include variable "version" to be written to log file.
@@ -577,7 +578,6 @@ contains
       call get_data_source(source,Atm%flagstruct%regional)
       if (trim(source) == source_fv3gfs) then
          call mpp_error(NOTE, "READING FROM REGRIDDED FV3GFS NEMSIO FILE")
-         levp = 65
       endif
 !
 !--- read in ak and bk from the gfs control file using fms_io read_data ---
@@ -810,7 +810,7 @@ contains
                    Atm%gridstruct%dxc, Atm%gridstruct%dyc, Atm%gridstruct%sin_sg, &
                    Atm%flagstruct%n_zs_filter, cnst_0p20*Atm%gridstruct%da_min, &
                    .false., oro_g, Atm%gridstruct%bounded_domain, &
-                    Atm%domain, Atm%bd)
+	           Atm%domain, Atm%bd)
             if ( is_master() ) write(*,*) 'Warning !!! del-2 terrain filter has been applied ', &
                    Atm%flagstruct%n_zs_filter, ' times'
           else if( Atm%flagstruct%nord_zs_filter == 4 ) then
@@ -818,7 +818,7 @@ contains
                    Atm%gridstruct%dx, Atm%gridstruct%dy,   &
                    Atm%gridstruct%dxc, Atm%gridstruct%dyc, Atm%gridstruct%sin_sg, &
                    Atm%flagstruct%n_zs_filter, .false., oro_g, &
-                   Atm%gridstruct%bounded_domain, &
+	           Atm%gridstruct%bounded_domain, &
                    Atm%domain, Atm%bd)
             if ( is_master() ) write(*,*) 'Warning !!! del-4 terrain filter has been applied ', &
                    Atm%flagstruct%n_zs_filter, ' times'
@@ -997,8 +997,6 @@ contains
       ied = Atm%bd%ied
       jsd = Atm%bd%jsd
       jed = Atm%bd%jed
-
-      deg2rad = pi/180.
 
       npz = Atm%npz
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
@@ -1562,8 +1560,6 @@ contains
       ied = Atm%bd%ied
       jsd = Atm%bd%jsd
       jed = Atm%bd%jed
-
-      deg2rad = pi/180.
 
       npz = Atm%npz
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
