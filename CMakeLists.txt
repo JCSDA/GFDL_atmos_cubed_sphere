@@ -136,10 +136,6 @@ ecbuild_add_library( TARGET          fv3
                      LINKER_LANGUAGE ${FV3_LINKER_LANGUAGE}
                    )
 
-if(OpenMP_Fortran_FOUND)
-  target_link_libraries(fv3 OpenMP::OpenMP_Fortran)
-endif()
-
 #GFortran-10 support
 if(CMAKE_Fortran_COMPILER_ID MATCHES GNU AND CMAKE_Fortran_COMPILER_VERSION VERSION_GREATER_EQUAL 10)
   target_compile_options(fv3 PRIVATE -fallow-argument-mismatch -fallow-invalid-boz)
