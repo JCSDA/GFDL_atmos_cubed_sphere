@@ -51,7 +51,7 @@ ecbuild_include_mpi()
 link_libraries(${MPI_CXX_LIBRARIES} ${MPI_Fortran_LIBRARIES})
 
 # FMS
-find_package( fms 2020.3.0 REQUIRED )
+find_package( fms REQUIRED )
 include_directories( ${FMS_INCLUDE_DIRS} )
 
 ####################################################################################################
