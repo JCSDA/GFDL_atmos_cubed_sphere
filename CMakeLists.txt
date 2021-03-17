@@ -9,7 +9,7 @@
 
 cmake_minimum_required( VERSION 3.3.2 FATAL_ERROR )
 
-project( fv3 C CXX Fortran )
+project( fv3 VERSION 1.0.0 LANGUAGES C CXX Fortran )
 
 set( CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH} )
 
@@ -30,7 +30,6 @@ ecbuild_requires_macro_version( 2.7 )
 ecbuild_declare_project()
 
 ecbuild_enable_fortran( REQUIRED )
-ecbuild_add_cxx11_flags()
 
 set( FV3_LINKER_LANGUAGE Fortran )
 
@@ -52,7 +51,7 @@ ecbuild_include_mpi()
 link_libraries(${MPI_CXX_LIBRARIES} ${MPI_Fortran_LIBRARIES})
 
 # FMS
-ecbuild_use_package( PROJECT fms REQUIRED )
+find_package( fms 2020.3.0 REQUIRED )
 include_directories( ${FMS_INCLUDE_DIRS} )
 
 ####################################################################################################
