@@ -150,6 +150,9 @@ if(ECBUILD_INSTALL_FORTRAN_MODULES)
   install(DIRECTORY ${CMAKE_Fortran_MODULE_DIRECTORY}/${CMAKE_CFG_INTDIR} DESTINATION ${INSTALL_INCLUDE_DIR} )
 endif()
 
+target_include_directories( fv3 INTERFACE $<BUILD_INTERFACE:${CMAKE_Fortran_MODULE_DIRECTORY}>
+                                          $<INSTALL_INTERFACE:${INSTALL_INCLUDE_DIR}>)
+
 ####################################################################################################
 # Finalise configuration
 ####################################################################################################
