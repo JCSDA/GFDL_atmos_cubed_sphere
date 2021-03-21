@@ -38,7 +38,7 @@ set( FV3_LINKER_LANGUAGE Fortran )
 ####################################################################################################
 
 #openMP
-find_package( OpenMP COMPONENTS Fortran )
+ecbuild_enable_omp()
 
 # NetCDF
 set( NETCDF_F90 ON CACHE BOOL "Compile with Fortran NetCDF" )
@@ -52,7 +52,6 @@ link_libraries(${MPI_CXX_LIBRARIES} ${MPI_Fortran_LIBRARIES})
 
 # FMS
 find_package( fms REQUIRED )
-include_directories( ${FMS_INCLUDE_DIRS} )
 
 ####################################################################################################
 # Export package info
