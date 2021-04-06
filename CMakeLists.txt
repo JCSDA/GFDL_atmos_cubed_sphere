@@ -40,10 +40,11 @@ set( FV3_LINKER_LANGUAGE Fortran )
 #openMP
 ecbuild_enable_omp()
 
+# jedi-cmake
+find_package( jedicmake QUIET )
+
 # NetCDF
-set( NETCDF_F90 ON CACHE BOOL "Compile with Fortran NetCDF" )
-find_package( NetCDF REQUIRED )
-include_directories( ${NetCDF_INCLUDE_DIRS} )
+find_package( NetCDF REQUIRED COMPONENTS Fortran )
 
 # MPI
 ecbuild_find_mpi( COMPONENTS CXX Fortran REQUIRED )
@@ -144,11 +145,11 @@ endif()
 ####################################################################################################
 
 if(ECBUILD_INSTALL_FORTRAN_MODULES)
-  install(DIRECTORY ${CMAKE_Fortran_MODULE_DIRECTORY}/${CMAKE_CFG_INTDIR} DESTINATION ${INSTALL_INCLUDE_DIR} )
+	install(DIRECTORY ${CMAKE_Fortran_MODULE_DIRECTORY}/${CMAKE_CFG_INTDIR} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} )
 endif()
 
 target_include_directories( fv3 INTERFACE $<BUILD_INTERFACE:${CMAKE_Fortran_MODULE_DIRECTORY}>
-                                          $<INSTALL_INTERFACE:${INSTALL_INCLUDE_DIR}>)
+                                          $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 ####################################################################################################
 # Finalise configuration
