@@ -9,7 +9,7 @@
 
 cmake_minimum_required( VERSION 3.3.2 FATAL_ERROR )
 
-project( fv3 C CXX Fortran )
+project( fv3 VERSION 1.0.0 LANGUAGES C CXX Fortran )
 
 set( CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH} )
 
@@ -30,7 +30,6 @@ ecbuild_requires_macro_version( 2.7 )
 ecbuild_declare_project()
 
 ecbuild_enable_fortran( REQUIRED )
-ecbuild_add_cxx11_flags()
 
 set( FV3_LINKER_LANGUAGE Fortran )
 
@@ -39,21 +38,19 @@ set( FV3_LINKER_LANGUAGE Fortran )
 ####################################################################################################
 
 #openMP
-find_package( OpenMP COMPONENTS Fortran )
+ecbuild_enable_omp()
+
+# jedi-cmake
+find_package( jedicmake QUIET )
 
 # NetCDF
-set( NETCDF_F90 ON CACHE BOOL "Compile with Fortran NetCDF" )
-find_package( NetCDF REQUIRED )
-include_directories( ${NETCDF_INCLUDE_DIR} )
+find_package( NetCDF REQUIRED COMPONENTS Fortran )
 
 # MPI
 ecbuild_find_mpi( COMPONENTS CXX Fortran REQUIRED )
-ecbuild_include_mpi()
-link_libraries(${MPI_CXX_LIBRARIES} ${MPI_Fortran_LIBRARIES})
 
 # FMS
-ecbuild_use_package( PROJECT fms REQUIRED )
-include_directories( ${FMS_INCLUDE_DIRS} )
+find_package( fms REQUIRED )
 
 ####################################################################################################
 # Export package info
@@ -133,13 +130,10 @@ list( APPEND fv3_src_files
 ecbuild_add_library( TARGET          fv3
                      SOURCES         ${fv3_src_files}
                      LIBS            fms ${NETCDF_LIBRARIES} MPI::MPI_Fortran
+                     PRIVATE_INCLUDES ${PROJECT_SOURCE_DIR}
                      INSTALL_HEADERS LISTED
                      LINKER_LANGUAGE ${FV3_LINKER_LANGUAGE}
                    )
-
-if(OpenMP_Fortran_FOUND)
-  target_link_libraries(fv3 OpenMP::OpenMP_Fortran)
-endif()
 
 #GFortran-10 support
 if(CMAKE_Fortran_COMPILER_ID MATCHES GNU AND CMAKE_Fortran_COMPILER_VERSION VERSION_GREATER_EQUAL 10)
@@ -151,8 +145,11 @@ endif()
 ####################################################################################################
 
 if(ECBUILD_INSTALL_FORTRAN_MODULES)
-  install(DIRECTORY ${CMAKE_Fortran_MODULE_DIRECTORY}/${CMAKE_CFG_INTDIR} DESTINATION ${INSTALL_INCLUDE_DIR} )
+	install(DIRECTORY ${CMAKE_Fortran_MODULE_DIRECTORY}/${CMAKE_CFG_INTDIR} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} )
 endif()
+
+target_include_directories( fv3 INTERFACE $<BUILD_INTERFACE:${CMAKE_Fortran_MODULE_DIRECTORY}>
+                                          $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 ####################################################################################################
 # Finalise configuration
