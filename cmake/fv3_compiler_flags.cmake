@@ -5,7 +5,7 @@
 
 # Compiler definitions
 # --------------------
-add_definitions( -Duse_libMPI -Duse_netCDF -DSPMD -DUSE_LOG_DIAG_FIELD_INFO -Duse_LARGEFILE -DOLDMPP -DGFS_PHYS )
+add_definitions( -Duse_libMPI -Duse_netCDF -DSPMD -DUSE_LOG_DIAG_FIELD_INFO -Duse_LARGEFILE -DOLDMPP -DGFS_PHYS -DINTERNAL_FILE_NML )
 
 # Special cases
 # -------------
