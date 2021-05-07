@@ -463,7 +463,7 @@ contains
 !> Namelist variables 
 !>       filtered_terrain  -  use orography maker filtered terrain mapping
 #ifdef __PGI
-      use GFS_restart, only : GFS_restart_type
+!!      use GFS_restart, only : GFS_restart_type
 
       implicit none
 #endif
@@ -1390,7 +1390,7 @@ contains
   subroutine get_ecmwf_ic( Atm, fv_domain )
 
 #ifdef __PGI
-      use GFS_restart, only : GFS_restart_type
+!!      use GFS_restart, only : GFS_restart_type
 
       implicit none
 #endif
