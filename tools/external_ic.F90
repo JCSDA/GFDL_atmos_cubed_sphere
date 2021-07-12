@@ -75,13 +75,14 @@ module external_ic_mod
    real, parameter:: zvir = rvgas/rdgas - 1.
    real(kind=R_GRID), parameter :: cnst_0p20=0.20d0
    real :: deg2rad
-   logical :: source_fv3gfs
+   logical, public :: source_fv3gfs
 
 ! version number of this module
 ! Include variable "version" to be written to log file.
 #include<file_version.h>
 
    public get_external_ic, get_cubed_sphere_terrain
+   public remap_scalar, remap_dwinds
 
 contains
 
@@ -4109,4 +4110,3 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
 
 
  end module external_ic_mod
-
