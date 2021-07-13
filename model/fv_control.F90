@@ -185,14 +185,15 @@ module fv_control_mod
 
 !-------------------------------------------------------------------------------
 
-   subroutine fv_control_init(Atm, dt_atmos, this_grid, grids_on_this_pe, p_split)
+   subroutine fv_control_init(Atm, dt_atmos, this_grid, grids_on_this_pe, p_split, skip_nml_read_in)
 
      type(fv_atmos_type), allocatable, intent(inout), target :: Atm(:)
-     real,                intent(in)    :: dt_atmos
-     integer,             intent(OUT)   :: this_grid
-     logical, allocatable, intent(OUT) :: grids_on_this_pe(:)
+     real,                 intent(in)    :: dt_atmos
+     integer,              intent(out)   :: this_grid
+     logical, allocatable, intent(out)   :: grids_on_this_pe(:)
+     integer,              intent(inout) :: p_split
+     logical, optional,    intent(in)    :: skip_nml_read_in
 
-     integer, intent(INOUT) :: p_split
      character(100) :: pe_list_name, errstring
      integer :: n, npes, pecounter, i, num_family, ntiles_nest_all, num_tile_top
      integer, allocatable :: global_pelist(:)
@@ -214,6 +215,7 @@ module fv_control_mod
 
      real :: sdt
      integer :: unit, ens_root_pe, tile_id(1)
+     logical :: skip_nml_read = .false.
 
      !!!!!!!!!! POINTERS FOR READING NAMELISTS !!!!!!!!!!
 
@@ -397,6 +399,7 @@ module fv_control_mod
 
      character(len=16), pointer :: restart_resolution
      integer, pointer :: layout(:), io_layout(:)
+
      logical, pointer :: write_coarse_restart_files
      logical, pointer :: write_coarse_diagnostics
      logical, pointer :: write_only_coarse_intermediate_restarts
@@ -407,6 +410,8 @@ module fv_control_mod
      this_grid = -1 ! default
      call mp_assign_gid
      ens_root_pe = mpp_root_pe()
+
+     if (present(skip_nml_read_in)) skip_nml_read = skip_nml_read_in
 
      ! 1. read nesting namelists
      call read_namelist_nest_nml
@@ -484,7 +489,7 @@ module fv_control_mod
         else
            Atm(n)%nml_filename = 'input.nml'
         endif
-        if (.not. file_exist(Atm(n)%nml_filename)) then
+        if (.not. file_exist(Atm(n)%nml_filename) .and. .not. skip_nml_read) then
            call mpp_error(FATAL, "Could not find nested grid namelist "//Atm(n)%nml_filename)
         endif
      enddo
@@ -550,7 +555,9 @@ module fv_control_mod
      else
         Atm(this_grid)%nml_filename = ''
      endif
-     call read_input_nml(Atm(this_grid)%nml_filename) !re-reads into internal namelist
+     if (.not. skip_nml_read) then
+       call read_input_nml(Atm(this_grid)%nml_filename) !re-reads into internal namelist
+     endif
 #endif
      call read_namelist_fv_grid_nml
      call read_namelist_fv_core_nml(Atm(this_grid)) ! do options processing here too?
