@@ -230,6 +230,7 @@ module fv_control_mod
      !CLEANUP module pointers
      character(len=80) , pointer :: grid_name
      character(len=120), pointer :: grid_file
+     character(len=120), pointer :: mosaic_path
      integer, pointer :: grid_type
      integer , pointer :: hord_mt
      integer , pointer :: kord_mt
@@ -713,7 +714,8 @@ module fv_control_mod
 
      ! 7. Init_grid() (including two-way nesting)
      call init_grid(Atm(this_grid), Atm(this_grid)%flagstruct%grid_name, Atm(this_grid)%flagstruct%grid_file, &
-          Atm(this_grid)%flagstruct%npx, Atm(this_grid)%flagstruct%npy, Atm(this_grid)%flagstruct%npz, Atm(this_grid)%flagstruct%ndims, Atm(this_grid)%flagstruct%ntiles, Atm(this_grid)%ng, tile_coarse)
+          Atm(this_grid)%flagstruct%npx, Atm(this_grid)%flagstruct%npy, Atm(this_grid)%flagstruct%npz, Atm(this_grid)%flagstruct%ndims, Atm(this_grid)%flagstruct%ntiles, Atm(this_grid)%ng, tile_coarse, &
+          Atm(this_grid)%flagstruct%mosaic_path)
 
 
      ! 8. grid_utils_init()
@@ -777,6 +779,7 @@ module fv_control_mod
        grid_type                     => Atm%flagstruct%grid_type
        grid_name                     => Atm%flagstruct%grid_name
        grid_file                     => Atm%flagstruct%grid_file
+       mosaic_path                   => Atm%flagstruct%mosaic_path
        hord_mt                       => Atm%flagstruct%hord_mt
        kord_mt                       => Atm%flagstruct%kord_mt
        kord_wz                       => Atm%flagstruct%kord_wz
@@ -995,7 +998,8 @@ module fv_control_mod
        !  local version of these variables to allow PGI compiler to compile
        character(len=80)  :: grid_name = ''
        character(len=120) :: grid_file = ''
-       namelist /fv_grid_nml/ grid_name, grid_file
+       character(len=120) :: mosaic_path = ''
+       namelist /fv_grid_nml/ grid_name, grid_file, mosaic_path
 
 #ifdef INTERNAL_FILE_NML
        ! Read Main namelist
@@ -1014,9 +1018,9 @@ module fv_control_mod
        write(unit, nml=fv_grid_nml)
 
        !Basic option processing
-       if (len_trim(grid_file) /= 0) Atm(this_grid)%flagstruct%grid_file = grid_file
-       if (len_trim(grid_name) /= 0) Atm(this_grid)%flagstruct%grid_name = grid_name
-
+       if (len_trim(grid_file)   /= 0) Atm(this_grid)%flagstruct%grid_file   = grid_file
+       if (len_trim(grid_name)   /= 0) Atm(this_grid)%flagstruct%grid_name   = grid_name
+       if (len_trim(mosaic_path) /= 0) Atm(this_grid)%flagstruct%mosaic_path = mosaic_path
 
      end subroutine read_namelist_fv_grid_nml
 
