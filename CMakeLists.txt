@@ -129,7 +129,7 @@ list( APPEND fv3_src_files
 
 ecbuild_add_library( TARGET          fv3
                      SOURCES         ${fv3_src_files}
-                     PUBLIC_LIBS     fms ${NETCDF_LIBRARIES} MPI::MPI_Fortran
+                     PUBLIC_LIBS     FMS::fms_r8 ${NETCDF_LIBRARIES} MPI::MPI_Fortran
                      PRIVATE_INCLUDES ${PROJECT_SOURCE_DIR}
                      INSTALL_HEADERS LISTED
                      LINKER_LANGUAGE ${FV3_LINKER_LANGUAGE}
