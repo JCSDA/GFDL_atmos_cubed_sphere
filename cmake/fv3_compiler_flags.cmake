@@ -9,7 +9,7 @@ add_definitions( -Duse_libMPI -Duse_netCDF -DSPMD -DUSE_LOG_DIAG_FIELD_INFO -Dus
 
 # Special cases
 # -------------
-if( CMAKE_Fortran_COMPILER_ID MATCHES "GNU" OR CMAKE_Fortran_COMPILER_ID MATCHES "Clang")
+if( CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
   set( CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -ffree-line-length-none -fdec -fno-range-check ")
 endif()
 
@@ -18,11 +18,7 @@ endif()
 if (FV3_PRECISION MATCHES "DOUBLE" OR NOT FV3_PRECISION)
 
   # Add double precision compilation flags
-  if( CMAKE_Fortran_COMPILER_ID MATCHES "Clang" )
-
-    set( CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -fdefault-real-8 -fdefault-double-8 ")
-
-  elseif( CMAKE_Fortran_COMPILER_ID MATCHES "Cray" )
+  if( CMAKE_Fortran_COMPILER_ID MATCHES "Cray" )
 
     set( CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} --sreal64 ")
 
