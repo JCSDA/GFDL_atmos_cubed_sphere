@@ -90,7 +90,7 @@ module fv_control_mod
 !     <td>mpp_send, mpp_sync, mpp_transmit, mpp_set_current_pelist, mpp_declare_pelist,
 !         mpp_root_pe, mpp_recv, mpp_sync_self, mpp_broadcast, read_input_nml,
 !         FATAL, mpp_error, mpp_pe, stdlog, mpp_npes, mpp_get_current_pelist,
-!         input_nml_file, get_unit, WARNING, read_ascii_file, INPUT_STR_LENGTH</td>
+!         input_nml_file, get_unit, WARNING, read_ascii_file</td>
 !   </tr>
 !   <tr>
 !     <td>mpp_domains_mod</td>
@@ -123,7 +123,7 @@ module fv_control_mod
    use mpp_mod,             only: FATAL, mpp_error, mpp_pe, stdlog, &
                                   mpp_npes, mpp_get_current_pelist, &
                                   input_nml_file, get_unit, WARNING, &
-                                  read_ascii_file, INPUT_STR_LENGTH
+                                  read_ascii_file
    use mpp_domains_mod,     only: mpp_get_data_domain, mpp_get_compute_domain, mpp_get_tile_id
    use tracer_manager_mod,  only: tm_get_number_tracers => get_number_tracers, &
                                   tm_get_tracer_index   => get_tracer_index,   &

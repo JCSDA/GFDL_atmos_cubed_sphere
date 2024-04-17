@@ -52,7 +52,12 @@ find_package( NetCDF REQUIRED COMPONENTS Fortran )
 ecbuild_find_mpi( COMPONENTS CXX Fortran REQUIRED )
 
 # FMS
-find_package( fms REQUIRED )
+find_package( fms 2023.04 REQUIRED COMPONENTS R4 R8)
+if (FV3_PRECISION MATCHES DOUBLE OR NOT FV3_PRECISION)
+  add_library(fms ALIAS FMS::fms_r8)
+else()
+  add_library(fms ALIAS FMS::fms_r4)
+endif()
 
 ####################################################################################################
 # Export package info
