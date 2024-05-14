@@ -1,26 +1,26 @@
 !***********************************************************************
-!*                   GNU Lesser General Public License                 
+!*                   GNU Lesser General Public License
 !*
 !* This file is part of the FV3 dynamical core.
 !*
-!* The FV3 dynamical core is free software: you can redistribute it 
+!* The FV3 dynamical core is free software: you can redistribute it
 !* and/or modify it under the terms of the
 !* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or 
+!* Free Software Foundation, either version 3 of the License, or
 !* (at your option) any later version.
 !*
-!* The FV3 dynamical core is distributed in the hope that it will be 
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
 !* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.  
+!* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
 !>@brief The module 'tp_core' is a collection of routines to support FV transport.
-!>@details The module contains the scalar advection scheme and PPM operators. 
+!>@details The module contains the scalar advection scheme and PPM operators.
 module tp_core_mod
 
 ! Modules Included:
@@ -56,11 +56,14 @@ module tp_core_mod
 
  private
  public fv_tp_2d, pert_ppm, copy_corners
+ public deln_flux_explm, deln_flux_explm_udvd
+ public copy_corners_for_udvd
 
  real, parameter:: ppm_fac = 1.5   !< nonlinear scheme limiter: between 1 and 2
  real, parameter:: r3 = 1./3.
  real, parameter:: near_zero = 1.E-25
  real, parameter:: ppm_limiter = 2.0
+ real, parameter:: r12 = 1./12.
 
 #ifdef WAVE_FORM
 ! Suresh & Huynh scheme 2.2 (purtabation form)
@@ -102,7 +105,7 @@ module tp_core_mod
 contains
 
 !>@brief The subroutine 'fv_tp_2d' contains the FV advection scheme
-!! \cite putman2007finite \cite lin1996multiflux. 
+!! \cite putman2007finite \cite lin1996multiflux.
 !>@details It performs 1 time step of the forward advection.
  subroutine fv_tp_2d(q, crx, cry, npx, npy, hord, fx, fy, xfx, yfx,  &
                      gridstruct, bd, ra_x, ra_y, lim_fac, mfx, mfy, mass, nord, damp_c)
@@ -110,10 +113,10 @@ contains
    integer, intent(in):: npx, npy
    integer, intent(in)::hord
 
-   real, intent(in)::  crx(bd%is:bd%ie+1,bd%jsd:bd%jed)  
-   real, intent(in)::  xfx(bd%is:bd%ie+1,bd%jsd:bd%jed)  
-   real, intent(in)::  cry(bd%isd:bd%ied,bd%js:bd%je+1 )  
-   real, intent(in)::  yfx(bd%isd:bd%ied,bd%js:bd%je+1 )  
+   real, intent(in)::  crx(bd%is:bd%ie+1,bd%jsd:bd%jed)
+   real, intent(in)::  xfx(bd%is:bd%ie+1,bd%jsd:bd%jed)
+   real, intent(in)::  cry(bd%isd:bd%ied,bd%js:bd%je+1 )
+   real, intent(in)::  yfx(bd%isd:bd%ied,bd%js:bd%je+1 )
    real, intent(in):: ra_x(bd%is:bd%ie,bd%jsd:bd%jed)
    real, intent(in):: ra_y(bd%isd:bd%ied,bd%js:bd%je)
    real, intent(inout):: q(bd%isd:bd%ied,bd%jsd:bd%jed)  !< transported scalar
@@ -159,14 +162,15 @@ contains
    ord_ou = hord
 
    if (.not. gridstruct%bounded_domain) &
-        call copy_corners(q, npx, npy, 2, gridstruct%bounded_domain, bd, &
-                          gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
+      call copy_corners(q, npx, npy, 2, gridstruct%bounded_domain, bd, &
+                         gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
 
-   call yppm(fy2, q, cry, ord_in, isd,ied,isd,ied, js,je,jsd,jed, npx,npy, gridstruct%dya, gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
+   call yppm(fy2, q, cry, ord_in, isd,ied,isd,ied, js,je,jsd,jed, npx,npy, gridstruct%dya, &
+             gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
 
    do j=js,je+1
       do i=isd,ied
-         fyy(i,j) = yfx(i,j) * fy2(i,j) 
+         fyy(i,j) = yfx(i,j) * fy2(i,j)
       enddo
    enddo
    do j=js,je
@@ -175,24 +179,27 @@ contains
       enddo
    enddo
 
-   call xppm(fx, q_i, crx(is,js), ord_ou, is,ie,isd,ied, js,je,jsd,jed, npx,npy, gridstruct%dxa, gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
+   call xppm(fx, q_i, crx(is,js), ord_ou, is,ie,isd,ied, js,je,jsd,jed, npx,npy, &
+             gridstruct%dxa, gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
 
-  if (.not. gridstruct%bounded_domain) &
-       call copy_corners(q, npx, npy, 1, gridstruct%bounded_domain, bd, &
-                               gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
+   if (.not. gridstruct%bounded_domain) &
+     call copy_corners(q, npx, npy, 1, gridstruct%bounded_domain, bd, &
+                       gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
 
-  call xppm(fx2, q, crx, ord_in, is,ie,isd,ied, jsd,jed,jsd,jed, npx,npy, gridstruct%dxa, gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
+   call xppm(fx2, q, crx, ord_in, is,ie,isd,ied, jsd,jed,jsd,jed, npx,npy, gridstruct%dxa, &
+             gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
 
-  do j=jsd,jed
-     do i=is,ie+1
-        fx1(i) =  xfx(i,j) * fx2(i,j)
-     enddo
-     do i=is,ie
-        q_j(i,j) = (q(i,j)*gridstruct%area(i,j) + fx1(i)-fx1(i+1))/ra_x(i,j)
-     enddo
-  enddo
+   do j=jsd,jed
+      do i=is,ie+1
+         fx1(i) =  xfx(i,j) * fx2(i,j)
+      enddo
+      do i=is,ie
+         q_j(i,j) = (q(i,j)*gridstruct%area(i,j) + fx1(i)-fx1(i+1))/ra_x(i,j)
+      enddo
+   enddo
 
-  call yppm(fy, q_j, cry, ord_ou, is,ie,isd,ied, js,je,jsd,jed, npx, npy, gridstruct%dya, gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
+   call yppm(fy, q_j, cry, ord_ou, is,ie,isd,ied, js,je,jsd,jed, npx, npy, gridstruct%dya, &
+             gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
 
 !----------------
 ! Flux averaging:
@@ -319,7 +326,7 @@ contains
     endif
 
  endif
-      
+
  end subroutine copy_corners
 
  subroutine xppm(flux, q, c, iord, is,ie,isd,ied, jfirst,jlast,jsd,jed, npx, npy, dxa, bounded_domain, grid_type, lim_fac)
@@ -336,10 +343,10 @@ contains
 !OUTPUT PARAMETERS:
  real  , INTENT(OUT) :: flux(is:ie+1,jfirst:jlast) !< Flux
 ! Local
- real, dimension(is-1:ie+1):: bl, br, b0
+ real, dimension(is-1:ie+1):: bl, br, b0, a4, da1
  real:: q1(isd:ied)
  real, dimension(is:ie+1):: fx0, fx1, xt1
- logical, dimension(is-1:ie+1):: smt5, smt6
+ logical, dimension(is-1:ie+1):: ext5, ext6, smt5, smt6
  logical, dimension(is:ie+1):: hi5, hi6
  real  al(is-1:ie+2)
  real  dm(is-2:ie+2)
@@ -354,7 +361,8 @@ contains
     is1 = is-1;         ie3 = ie+2
                         ie1 = ie+1
  end if
-  mord = abs(iord)
+
+ mord = abs(iord)
 
  do 666 j=jfirst,jlast
 
@@ -362,15 +370,15 @@ contains
        q1(i) = q(i,j)
     enddo
 
- if ( iord < 8 ) then
+ if ( iord < 7 ) then
 ! ord = 2: perfectly linear ppm scheme
-! Diffusivity: ord2 < ord5 < ord3 < ord4 < ord6 
+! Diffusivity: ord2 < ord5 < ord3 < ord4 < ord6
 
    do i=is1, ie3
       al(i) = p1*(q1(i-1)+q1(i)) + p2*(q1(i-2)+q1(i+1))
    enddo
 
-   if ( .not. bounded_domain .and. grid_type<3 ) then
+   if ( .not.bounded_domain .and. grid_type<3 ) then
      if ( is==1 ) then
        al(0) = c1*q1(-2) + c2*q1(-1) + c3*q1(0)
        al(1) = 0.5*(((2.*dxa(0,j)+dxa(-1,j))*q1(0)-dxa(0,j)*q1(-1))/(dxa(-1,j)+dxa(0,j)) &
@@ -407,7 +415,7 @@ contains
              fx1(i) = (1.+c(i,j))*(bl(i) + c(i,j)*b0(i))
              flux(i,j) = q1(i)
          endif
-         if (smt5(i-1).or.smt5(i)) flux(i,j) = flux(i,j) + fx1(i) 
+         if (smt5(i-1).or.smt5(i)) flux(i,j) = flux(i,j) + fx1(i)
       enddo
 
    elseif ( mord==2 ) then  ! perfectly linear scheme
@@ -417,10 +425,10 @@ contains
          xt = c(i,j)
          if ( xt > 0. ) then
               qtmp = q1(i-1)
-              flux(i,j) = qtmp + (1.-xt)*(al(i)-qtmp-xt*(al(i-1)+al(i)-(qtmp+qtmp)))  
+              flux(i,j) = qtmp + (1.-xt)*(al(i)-qtmp-xt*(al(i-1)+al(i)-(qtmp+qtmp)))
          else
               qtmp = q1(i)
-              flux(i,j) = qtmp + (1.+xt)*(al(i)-qtmp+xt*(al(i)+al(i+1)-(qtmp+qtmp)))  
+              flux(i,j) = qtmp + (1.+xt)*(al(i)-qtmp+xt*(al(i)+al(i+1)-(qtmp+qtmp)))
          endif
 !        x0 = sign(dim(xt, 0.), 1.)
 !        x1 = sign(dim(0., xt), 1.)
@@ -440,26 +448,19 @@ contains
            smt6(i) = 3.*x0 < xt
         enddo
         do i=is,ie+1
-           fx1(i) = 0.
            xt1(i) = c(i,j)
-           hi5(i) = smt5(i-1) .and. smt5(i)   ! more diffusive
-           hi6(i) = smt6(i-1) .or.  smt6(i)
-        enddo
-        do i=is,ie+1
            if ( xt1(i) > 0. ) then
-                if ( hi6(i) ) then
-                   fx1(i) = br(i-1) - xt1(i)*b0(i-1)
-                elseif ( hi5(i) ) then   ! 2nd order, piece-wise linear
-                   fx1(i) = sign(min(abs(bl(i-1)),abs(br(i-1))), br(i-1))
-                endif
-                flux(i,j) = q1(i-1) + (1.-xt1(i))*fx1(i)
+               if ( smt5(i-1) .or. smt6(i) ) then
+                    flux(i,j) = q1(i-1) + (1.-xt1(i))*(br(i-1) - xt1(i)*b0(i-1))
+               else
+                    flux(i,j) = q1(i-1)
+               endif
            else
-                if ( hi6(i) ) then
-                   fx1(i) = bl(i) + xt1(i)*b0(i)
-                elseif ( hi5(i) ) then   ! 2nd order, piece-wise linear
-                   fx1(i) = sign(min(abs(bl(i)), abs(br(i))), bl(i))
-                endif
-                flux(i,j) = q1(i) + (1.+xt1(i))*fx1(i)
+               if ( smt6(i-1) .or. smt5(i) ) then
+                    flux(i,j) = q1(i) + (1.+xt1(i))*(bl(i) + xt1(i)*b0(i))
+               else
+                    flux(i,j) = q1(i)
+               endif
            endif
         enddo
 
@@ -482,31 +483,58 @@ contains
         enddo
 !DEC$ VECTOR ALWAYS
         do i=is,ie+1
-           if ( xt1(i) > 0. ) then
+! Low-order only if (ext6(i-1).and.ext6(i)) .AND. ext5(i1).or.ext5(i)()
+          if ( xt1(i) > 0. ) then
                fx1(i) = (1.-xt1(i))*(br(i-1) - xt1(i)*b0(i-1))
                flux(i,j) = q1(i-1)
            else
                fx1(i) = (1.+xt1(i))*(bl(i) + xt1(i)*b0(i))
                flux(i,j) = q1(i)
            endif
-           if ( hi5(i) ) flux(i,j) = flux(i,j) + fx1(i) 
+           if ( hi5(i) ) flux(i,j) = flux(i,j) + fx1(i)
         enddo
 
    else
 
-      if ( mord==5 ) then
+      if ( iord==5 ) then
         do i=is-1,ie+1
            bl(i) = al(i)   - q1(i)
            br(i) = al(i+1) - q1(i)
            b0(i) = bl(i) + br(i)
            smt5(i) = bl(i)*br(i) < 0.
         enddo
+      elseif ( iord==-5 ) then
+        do i=is-1,ie+1
+           bl(i) = al(i)   - q1(i)
+           br(i) = al(i+1) - q1(i)
+           b0(i) = bl(i) + br(i)
+           smt5(i) = bl(i)*br(i) < 0.
+           da1(i) = br(i) - bl(i)
+           a4(i) = -3.*b0(i)
+        enddo
+        do i=is-1,ie+1
+           if( abs(da1(i)) < -a4(i) ) then
+           if( q1(i)+0.25*da1(i)**2/a4(i)+a4(i)*r12 < 0. ) then
+             if( .not. smt5(i) ) then
+                br(i) = 0.
+                bl(i) = 0.
+                b0(i) = 0.
+             elseif( da1(i) > 0. ) then
+                br(i) = -2.*bl(i)
+                b0(i) =    -bl(i)
+             else
+                bl(i) = -2.*br(i)
+                b0(i) =    -br(i)
+             endif
+           endif
+           endif
+        enddo
       else
         do i=is-1,ie+1
            bl(i) = al(i)   - q1(i)
            br(i) = al(i+1) - q1(i)
            b0(i) = bl(i) + br(i)
-           smt5(i) = 3.*abs(b0(i)) < abs(bl(i)-br(i))
+           smt5(i) = abs(3.*b0(i)) < abs(bl(i)-br(i))
         enddo
       endif
 
@@ -519,7 +547,7 @@ contains
               fx1(i) = (1.+c(i,j))*(bl(i) + c(i,j)*b0(i))
               flux(i,j) = q1(i)
          endif
-         if (smt5(i-1).or.smt5(i)) flux(i,j) = flux(i,j) + fx1(i) 
+         if (smt5(i-1).or.smt5(i)) flux(i,j) = flux(i,j) + fx1(i)
       enddo
 
    endif
@@ -530,7 +558,7 @@ contains
 ! Monotonic constraints:
 ! ord = 8: PPM with Lin's PPM fast monotone constraint
 ! ord = 10: PPM with Lin's modification of Huynh 2nd constraint
-! ord = 13: 10 plus positive definite constraint
+! ord = 13: positive definite constraint
 
     do i=is-2,ie+2
           xt = 0.25*(q1(i+1) - q1(i-1))
@@ -547,14 +575,7 @@ contains
           bl(i) = -sign(min(abs(xt), abs(al(i  )-q1(i))), xt)
           br(i) =  sign(min(abs(xt), abs(al(i+1)-q1(i))), xt)
        enddo
-    elseif ( iord==11 ) then
-! This is emulation of 2nd van Leer scheme using PPM codes
-       do i=is1, ie1
-          xt = ppm_fac*dm(i)
-          bl(i) = -sign(min(abs(xt), abs(al(i  )-q1(i))), xt)
-          br(i) =  sign(min(abs(xt), abs(al(i+1)-q1(i))), xt)
-       enddo
-    else
+    elseif ( iord==10 ) then
        do i=is1-2, ie1+1
           dq(i) = 2.*(q1(i+1) - q1(i))
        enddo
@@ -572,6 +593,41 @@ contains
                    lac_1 = pmp_1 + 0.75*dq(i+1)
                    bl(i) = min( max(0., pmp_1, lac_1), max(bl(i), min(0., pmp_1, lac_1)) )
           endif
+       enddo
+    elseif ( iord==11 ) then
+! This is emulation of 2nd van Leer scheme using PPM codes
+       do i=is1, ie1
+          xt = ppm_fac*dm(i)
+          bl(i) = -sign(min(abs(xt), abs(al(i  )-q1(i))), xt)
+          br(i) =  sign(min(abs(xt), abs(al(i+1)-q1(i))), xt)
+       enddo
+    elseif ( iord==7 .or. iord==12 ) then  ! positive definite (Lin & Rood 1996)
+       do i=is1, ie1
+          bl(i) = al(i)   - q1(i)
+          br(i) = al(i+1) - q1(i)
+          a4(i) = -3.*(bl(i) + br(i))
+           da1(i) = br(i) - bl(i)
+          ext5(i) = br(i)*bl(i) > 0.
+          ext6(i) = abs(da1(i)) < -a4(i)
+       enddo
+       do i=is1, ie1
+          if( ext6(i) ) then
+            if( q1(i)+0.25/a4(i)*da1(i)**2+a4(i)*r12 < 0. ) then
+                if( ext5(i) ) then
+                   br(i) = 0.
+                   bl(i) = 0.
+                elseif( da1(i) > 0. ) then
+                   br(i) = -2.*bl(i)
+                else
+                   bl(i) = -2.*br(i)
+                endif
+            endif
+          endif
+       enddo
+    else
+       do i=is1, ie1
+          bl(i) = al(i  ) - q1(i)
+          br(i) = al(i+1) - q1(i)
        enddo
     endif
 ! Positive definite constraint:
@@ -619,13 +675,30 @@ contains
 
   endif
 
-  do i=is,ie+1
-     if( c(i,j)>0. ) then
-         flux(i,j) = q1(i-1) + (1.-c(i,j))*(br(i-1)-c(i,j)*(bl(i-1)+br(i-1)))
-     else
-         flux(i,j) = q1(i  ) + (1.+c(i,j))*(bl(i  )+c(i,j)*(bl(i)+br(i)))
-     endif
-  enddo
+  if ( iord==7 ) then
+      do i=is-1,ie+1
+           b0(i) = bl(i) + br(i)
+         smt5(i) = bl(i) * br(i) < 0.
+      enddo
+      do i=is,ie+1
+         if ( c(i,j) > 0. ) then
+              fx1(i) = (1.-c(i,j))*(br(i-1) - c(i,j)*b0(i-1))
+              flux(i,j) = q1(i-1)
+         else
+              fx1(i) = (1.+c(i,j))*(bl(i) + c(i,j)*b0(i))
+              flux(i,j) = q1(i)
+         endif
+         if ( smt5(i-1).or.smt5(i) ) flux(i,j) = flux(i,j) + fx1(i)
+      enddo
+  else
+      do i=is,ie+1
+         if( c(i,j)>0. ) then
+             flux(i,j) = q1(i-1) + (1.-c(i,j))*(br(i-1)-c(i,j)*(bl(i-1)+br(i-1)))
+         else
+             flux(i,j) = q1(i  ) + (1.+c(i,j))*(bl(i  )+c(i,j)*(bl(i)+br(i)))
+         endif
+      enddo
+  endif
 
 666   continue
  end subroutine xppm
@@ -648,10 +721,10 @@ contains
  real:: al(ifirst:ilast,js-1:je+2)
  real, dimension(ifirst:ilast,js-1:je+1):: bl, br, b0
  real:: dq(ifirst:ilast,js-3:je+2)
- real,    dimension(ifirst:ilast):: fx0, fx1, xt1
+ real,    dimension(ifirst:ilast):: fx0, fx1, xt1, a4
  logical, dimension(ifirst:ilast,js-1:je+1):: smt5, smt6
  logical, dimension(ifirst:ilast):: hi5, hi6
- real:: x0, xt, qtmp, pmp_1, lac_1, pmp_2, lac_2, r1
+ real:: x0, xt, qtmp, pmp_1, lac_1, pmp_2, lac_2
  integer:: i, j, js1, je3, je1, mord
 
    if ( .not.bounded_domain .and. grid_type < 3 ) then
@@ -666,7 +739,7 @@ contains
 
  mord = abs(jord)
 
-if ( jord < 8 ) then
+if ( jord < 7 ) then
 
    do j=js1, je3
       do i=ifirst,ilast
@@ -720,7 +793,7 @@ if ( jord < 8 ) then
                   fx1(i) = (1.+c(i,j))*(bl(i,j) + c(i,j)*b0(i,j))
                   flux(i,j) = q(i,j)
              endif
-             if (smt5(i,j-1).or.smt5(i,j)) flux(i,j) = flux(i,j) + fx1(i) 
+             if (smt5(i,j-1).or.smt5(i,j)) flux(i,j) = flux(i,j) + fx1(i)
           enddo
        enddo
 
@@ -748,7 +821,7 @@ if ( jord < 8 ) then
               bl(i,j) = al(i,j  ) - q(i,j)
               br(i,j) = al(i,j+1) - q(i,j)
               b0(i,j) = bl(i,j) + br(i,j)
-                   x0 = abs(b0(i,j)) 
+                   x0 = abs(b0(i,j))
                    xt = abs(bl(i,j)-br(i,j))
               smt5(i,j) =    x0 < xt
               smt6(i,j) = 3.*x0 < xt
@@ -756,26 +829,21 @@ if ( jord < 8 ) then
         enddo
         do j=js,je+1
            do i=ifirst,ilast
-              fx1(i) = 0.
               xt1(i) = c(i,j)
-              hi5(i) = smt5(i,j-1) .and. smt5(i,j)
-              hi6(i) = smt6(i,j-1) .or.  smt6(i,j)
            enddo
            do i=ifirst,ilast
               if ( xt1(i) > 0. ) then
-                   if( hi6(i) ) then
-                       fx1(i) = br(i,j-1) - xt1(i)*b0(i,j-1)
-                   elseif ( hi5(i) ) then ! both up-downwind sides are noisy; 2nd order, piece-wise linear
-                       fx1(i) = sign(min(abs(bl(i,j-1)),abs(br(i,j-1))),br(i,j-1))
+                   if( smt5(i,j-1) .or. smt6(i,j) ) then
+                       flux(i,j) = q(i,j-1) + (1.-xt1(i))*(br(i,j-1) - xt1(i)*b0(i,j-1))
+                   else
+                       flux(i,j) = q(i,j-1)
                    endif
-                   flux(i,j) = q(i,j-1) + (1.-xt1(i))*fx1(i)
               else
-                   if( hi6(i) ) then
-                       fx1(i) = bl(i,j) + xt1(i)*b0(i,j)
-                   elseif ( hi5(i) ) then ! both up-downwind sides are noisy; 2nd order, piece-wise linear
-                       fx1(i) = sign(min(abs(bl(i,j)),abs(br(i,j))), bl(i,j))
+                   if( smt6(i,j-1) .or. smt5(i,j) ) then
+                       flux(i,j) = q(i,j) + (1.+xt1(i))*(bl(i,j) + xt1(i)*b0(i,j))
+                   else
+                       flux(i,j) = q(i,j)
                    endif
-                   flux(i,j) = q(i,j) + (1.+xt1(i))*fx1(i)
               endif
            enddo
         enddo
@@ -787,7 +855,7 @@ if ( jord < 8 ) then
               bl(i,j) = al(i,j  ) - q(i,j)
               br(i,j) = al(i,j+1) - q(i,j)
               b0(i,j) = bl(i,j) + br(i,j)
-                   x0 = abs(b0(i,j)) 
+                   x0 = abs(b0(i,j))
                    xt = abs(bl(i,j)-br(i,j))
               smt5(i,j) =    x0 < xt
               smt6(i,j) = 3.*x0 < xt
@@ -809,12 +877,12 @@ if ( jord < 8 ) then
                      fx1(i) = (1.+xt1(i))*(bl(i,j) + xt1(i)*b0(i,j))
                      flux(i,j) = q(i,j)
                 endif
-                if ( hi5(i) ) flux(i,j) = flux(i,j) + fx1(i) 
+                if ( hi5(i) ) flux(i,j) = flux(i,j) + fx1(i)
            enddo
         enddo
 
-   else  ! mord=5,6,7
-       if ( mord==5 ) then
+   else  ! mord=5,6
+       if ( jord==5 ) then
           do j=js-1,je+1
              do i=ifirst,ilast
                 bl(i,j) = al(i,j  ) - q(i,j)
@@ -823,13 +891,41 @@ if ( jord < 8 ) then
                 smt5(i,j) = bl(i,j)*br(i,j) < 0.
              enddo
           enddo
+       elseif ( jord==-5 ) then
+          do j=js-1,je+1
+             do i=ifirst,ilast
+                bl(i,j) = al(i,j  ) - q(i,j)
+                br(i,j) = al(i,j+1) - q(i,j)
+                b0(i,j) = bl(i,j) + br(i,j)
+                xt1(i) = br(i,j) - bl(i,j)
+                 a4(i) = -3.*b0(i,j)
+                smt5(i,j) = bl(i,j)*br(i,j) < 0.
+             enddo
+             do i=ifirst,ilast
+                if( abs(xt1(i)) < -a4(i) ) then
+                  if( q(i,j)+0.25*xt1(i)**2/a4(i)+a4(i)*r12 < 0. ) then
+                    if( .not. smt5(i,j) ) then
+                        br(i,j) = 0.
+                        bl(i,j) = 0.
+                        b0(i,j) = 0.
+                    elseif( xt1(i) > 0. ) then
+                        br(i,j) = -2.*bl(i,j)
+                        b0(i,j) =    -bl(i,j)
+                    else
+                        bl(i,j) = -2.*br(i,j)
+                        b0(i,j) =    -br(i,j)
+                    endif
+                  endif
+                endif
+             enddo
+          enddo
        else
           do j=js-1,je+1
              do i=ifirst,ilast
                 bl(i,j) = al(i,j  ) - q(i,j)
                 br(i,j) = al(i,j+1) - q(i,j)
                 b0(i,j) = bl(i,j) + br(i,j)
-                smt5(i,j) = 3.*abs(b0(i,j)) < abs(bl(i,j)-br(i,j))
+                smt5(i,j) = abs(3.*b0(i,j)) < abs(bl(i,j)-br(i,j))
              enddo
           enddo
        endif
@@ -844,7 +940,7 @@ if ( jord < 8 ) then
                   fx1(i) = (1.+c(i,j))*(bl(i,j) + c(i,j)*b0(i,j))
                   flux(i,j) = q(i,j)
              endif
-             if (smt5(i,j-1).or.smt5(i,j)) flux(i,j) = flux(i,j) + fx1(i) 
+             if (smt5(i,j-1).or.smt5(i,j)) flux(i,j) = flux(i,j) + fx1(i)
           enddo
        enddo
 
@@ -855,7 +951,7 @@ else
 ! Monotonic constraints:
 ! ord = 8: PPM with Lin's PPM fast monotone constraint
 ! ord > 8: PPM with Lin's modification of Huynh 2nd constraint
- 
+
   do j=js-2,je+2
      do i=ifirst,ilast
              xt = 0.25*(q(i,j+1) - q(i,j-1))
@@ -877,15 +973,7 @@ else
              br(i,j) =  sign(min(abs(xt), abs(al(i,j+1)-q(i,j))), xt)
           enddo
        enddo
-  elseif ( jord==11 ) then
-       do j=js1,je1
-          do i=ifirst,ilast
-             xt = ppm_fac*dm(i,j)
-             bl(i,j) = -sign(min(abs(xt), abs(al(i,j)-q(i,j))),   xt)
-             br(i,j) =  sign(min(abs(xt), abs(al(i,j+1)-q(i,j))), xt)
-          enddo
-       enddo
-  else
+  elseif ( jord==10 ) then
        do j=js1-2,je1+1
           do i=ifirst,ilast
              dq(i,j) = 2.*(q(i,j+1) - q(i,j))
@@ -902,10 +990,50 @@ else
                   pmp_2 = dq(i,j-1)
                   lac_2 = pmp_2 - 0.75*dq(i,j-2)
                   br(i,j) = min(max(0.,pmp_2,lac_2), max(br(i,j), min(0.,pmp_2,lac_2)))
-                  pmp_1 = -dq(i,j) 
+                  pmp_1 = -dq(i,j)
                   lac_1 = pmp_1 + 0.75*dq(i,j+1)
                   bl(i,j) = min(max(0.,pmp_1,lac_1), max(bl(i,j), min(0.,pmp_1,lac_1)))
              endif
+          enddo
+       enddo
+  elseif ( jord==11 ) then
+       do j=js1,je1
+          do i=ifirst,ilast
+             xt = ppm_fac*dm(i,j)
+             bl(i,j) = -sign(min(abs(xt), abs(al(i,j)-q(i,j))),   xt)
+             br(i,j) =  sign(min(abs(xt), abs(al(i,j+1)-q(i,j))), xt)
+          enddo
+       enddo
+  elseif ( jord==7 .or. jord==12 ) then
+       do j=js1,je1
+          do i=ifirst,ilast
+             bl(i,j) = al(i,j  ) - q(i,j)
+             br(i,j) = al(i,j+1) - q(i,j)
+              xt1(i) = br(i,j) - bl(i,j)
+               a4(i) = -3.*(br(i,j) + bl(i,j))
+              hi5(i) = bl(i,j)*br(i,j) > 0.
+              hi6(i) = abs(xt1(i)) < -a4(i)
+          enddo
+          do i=ifirst,ilast
+             if( hi6(i) ) then
+                 if( q(i,j)+0.25/a4(i)*xt1(i)**2+a4(i)*r12 < 0. ) then
+                    if( hi5(i) ) then
+                        br(i,j) = 0.
+                        bl(i,j) = 0.
+                    elseif( xt1(i) > 0. ) then
+                        br(i,j) = -2.*bl(i,j)
+                    else
+                        bl(i,j) = -2.*br(i,j)
+                    endif
+                 endif
+             endif
+          enddo
+       enddo
+  else
+       do j=js1,je1
+          do i=ifirst,ilast
+             bl(i,j) = al(i,j  ) - q(i,j)
+             br(i,j) = al(i,j+1) - q(i,j)
           enddo
        enddo
   endif
@@ -963,15 +1091,36 @@ else
 
 endif
 
-  do j=js,je+1
-     do i=ifirst,ilast
-        if( c(i,j)>0. ) then
-           flux(i,j) = q(i,j-1) + (1.-c(i,j))*(br(i,j-1)-c(i,j)*(bl(i,j-1)+br(i,j-1)))
-        else
-           flux(i,j) = q(i,j  ) + (1.+c(i,j))*(bl(i,j  )+c(i,j)*(bl(i,j)+br(i,j)))
-        endif
-     enddo
-  enddo
+  if ( jord==7 ) then
+      do j=js-1,je+1
+         do i=ifirst,ilast
+              b0(i,j) = bl(i,j) + br(i,j)
+            smt5(i,j) = bl(i,j) * br(i,j) < 0.
+         enddo
+      enddo
+      do j=js,je+1
+         do i=ifirst,ilast
+            if ( c(i,j) > 0. ) then
+                 fx1(i) = (1.-c(i,j))*(br(i,j-1) - c(i,j)*b0(i,j-1))
+                 flux(i,j) = q(i,j-1)
+            else
+                 fx1(i) = (1.+c(i,j))*(bl(i,j) + c(i,j)*b0(i,j))
+                 flux(i,j) = q(i,j)
+            endif
+            if ( smt5(i,j-1).or.smt5(i,j) ) flux(i,j) = flux(i,j) + fx1(i)
+         enddo
+      enddo
+  else
+      do j=js,je+1
+         do i=ifirst,ilast
+            if( c(i,j)>0. ) then
+                flux(i,j) = q(i,j-1) + (1.-c(i,j))*(br(i,j-1)-c(i,j)*(bl(i,j-1)+br(i,j-1)))
+            else
+                flux(i,j) = q(i,j  ) + (1.+c(i,j))*(bl(i,j  )+c(i,j)*(bl(i,j)+br(i,j)))
+            endif
+         enddo
+      enddo
+  endif
  end subroutine yppm
 
 
@@ -993,7 +1142,7 @@ endif
 !
 ! !DESCRIPTION:
 !
-!     Ghost 4d east/west 
+!     Ghost 4d east/west
 !
 ! !REVISION HISTORY:
 !    2005.08.22   Putman
@@ -1034,7 +1183,6 @@ endif
 ! Local:
  real a4, da1, da2, a6da, fmin
  integer i
- real, parameter:: r12 = 1./12.
 
 !-----------------------------------
 ! Optimized PPM in perturbation form:
@@ -1087,7 +1235,7 @@ endif
 
  end subroutine pert_ppm
 
-
+!TODO lmh 25may18: Need to ensure copy_corners is just ignored if not a global domain
  subroutine deln_flux(nord,is,ie,js,je, npx, npy, damp, q, fx, fy, gridstruct, bd, mass )
 ! Del-n damping for the cell-mean values (A grid)
 !------------------
@@ -1114,11 +1262,11 @@ endif
 #ifdef USE_SG
    real, pointer, dimension(:,:)   :: dx, dy, rdxc, rdyc
    real, pointer, dimension(:,:,:) :: sin_sg
-   dx       => gridstruct%dx     
-   dy       => gridstruct%dy     
-   rdxc     => gridstruct%rdxc   
-   rdyc     => gridstruct%rdyc   
-   sin_sg   => gridstruct%sin_sg 
+   dx       => gridstruct%dx
+   dy       => gridstruct%dy
+   rdxc     => gridstruct%rdxc
+   rdyc     => gridstruct%rdyc
+   sin_sg   => gridstruct%sin_sg
 #endif
 
    i1 = is-1-nord;    i2 = ie+1+nord
@@ -1237,6 +1385,333 @@ endif
    endif
 
  end subroutine deln_flux
+
+
+!===========================================
+ subroutine deln_flux_explm(nord,is,ie,js,je,npx,npy,damp,q,gridstruct,bd)
+!> Del-2 time split explicit damping for the cell-mean values (A grid)
+!------------------
+!> nord =  used for extra grid as side
+!------------------
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   integer, intent(in):: nord            !< del-n
+   integer, intent(in):: is,ie,js,je, npx, npy
+   real, intent(in):: damp(bd%isd:bd%ied, bd%jsd:bd%jed)
+   real, intent(inout):: q(bd%isd:bd%ied, bd%jsd:bd%jed)  ! q ghosted on input
+   type(fv_grid_type), intent(IN), target :: gridstruct
+! local:
+   real fx2(bd%isd:bd%ied,bd%jsd:bd%jed), fy2(bd%isd:bd%ied,bd%jsd:bd%jed)
+   real xv(bd%isd:bd%ied,bd%jsd:bd%jed)
+   real d2(bd%isd:bd%ied,bd%jsd:bd%jed)
+   integer i, j, m, n, nt, i1, i2, j1, j2
+
+#ifdef USE_SG
+   real, pointer, dimension(:,:)   :: dx, dy, rdxc, rdyc
+   real, pointer, dimension(:,:,:) :: sin_sg
+
+   dx       => gridstruct%dx
+   dy       => gridstruct%dy
+   rdxc     => gridstruct%rdxc
+   rdyc     => gridstruct%rdyc
+   sin_sg   => gridstruct%sin_sg
+#endif
+
+   i1 = is-1-nord;    i2 = ie+1+nord
+   j1 = js-1-nord;    j2 = je+1+nord
+
+   do j=bd%jsd,bd%jed
+      do i=bd%isd,bd%ied
+         xv(i,j) = damp(i,j)
+         d2(i,j) = q(i,j)
+      enddo
+   enddo
+
+! explicit scheme
+! for dadx * dy
+   call copy_corners(d2, npx, npy, 1, gridstruct%nested, bd, &
+                     gridstruct%sw_corner, gridstruct%se_corner, &
+                     gridstruct%nw_corner, gridstruct%ne_corner)
+   call copy_corners(xv, npx, npy, 1, gridstruct%nested, bd, &
+                     gridstruct%sw_corner, gridstruct%se_corner, &
+                     gridstruct%nw_corner, gridstruct%ne_corner)
+!
+   do j=j1,j2
+      do i=i1+1,i2
+#ifdef USE_SG
+         fx2(i,j) = 0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))*dy(i,j)*(d2(i-1,j)-d2(i,j))*rdxc(i,j)
+#else
+         fx2(i,j) = gridstruct%del6_v(i,j)*(d2(i-1,j)-d2(i,j))
+#endif
+         fx2(i,j) = 0.5*(xv(i-1,j)+xv(i,j))*fx2(i,j)
+      enddo
+   enddo
+! for dady * dx
+   call copy_corners(d2, npx, npy, 2, gridstruct%nested, bd, &
+                     gridstruct%sw_corner, gridstruct%se_corner, &
+                     gridstruct%nw_corner, gridstruct%ne_corner)
+   call copy_corners(xv, npx, npy, 2, gridstruct%nested, bd, &
+                     gridstruct%sw_corner, gridstruct%se_corner, &
+                     gridstruct%nw_corner, gridstruct%ne_corner)
+!
+   do i=i1,i2
+      do j=j1+1,j2
+#ifdef USE_SG
+         fy2(i,j) = 0.5*(sin_sg(i,j-1,4)+sin_sg(i,j,2))*dx(i,j)*(d2(i,j-1)-d2(i,j))*rdyc(i,j)
+#else
+         fy2(i,j) = gridstruct%del6_u(i,j)*(d2(i,j-1)-d2(i,j))
+#endif
+         fy2(i,j) = 0.5*(xv(i,j-1)+xv(i,j))*fy2(i,j)
+      enddo
+   enddo
+!
+   do j=j1+1,j2-1
+      do i=i1+1,i2-1
+         q(i,j) = q(i,j) +            &
+         (fx2(i,j)-fx2(i+1,j)+fy2(i,j)-fy2(i,j+1))*gridstruct%rarea(i,j)
+      enddo
+   enddo
+
+   return
+ end subroutine deln_flux_explm
+
+ subroutine deln_flux_explm_udvd(nord,is,ie,js,je,npx,npy,damp,u,v,gridstruct,bd)
+!> Del-2 time split explicit damping for the cell-edge values (D grid)
+!------------------
+!> nord =  used for extra grid as side
+!------------------
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   integer, intent(in):: nord            !< del-n
+   integer, intent(in):: is,ie,js,je, npx, npy
+   real, intent(in):: damp(bd%isd:bd%ied, bd%jsd:bd%jed)
+   real, intent(inout):: u(bd%isd:bd%ied  , bd%jsd:bd%jed+1)
+   real, intent(inout):: v(bd%isd:bd%ied+1, bd%jsd:bd%jed  )
+   type(fv_grid_type), intent(IN), target :: gridstruct
+! local:
+   real fx1(bd%isd:bd%ied,bd%jsd:bd%jed), fy1(bd%isd:bd%ied,bd%jsd:bd%jed)
+   real fx2(bd%isd:bd%ied,bd%jsd:bd%jed), fy2(bd%isd:bd%ied,bd%jsd:bd%jed)
+   real x5(bd%isd:bd%ied,bd%jsd:bd%jed)
+   real x6(bd%isd:bd%ied,bd%jsd:bd%jed)
+   real d1(bd%isd:bd%ied  ,bd%jsd:bd%jed+1)
+   real d2(bd%isd:bd%ied+1,bd%jsd:bd%jed  )
+   integer i, j, m, n, nt, i1, i2, j1, j2
+
+#ifdef USE_SG
+   real, pointer, dimension(:,:)   ::  dxa,  dya,  dx6,  dy6
+   real, pointer, dimension(:,:)   :: rdxa, rdya, rdx6, rdy6
+   real, pointer, dimension(:,:)   :: sina_6
+   real, pointer, dimension(:,:,:) :: sin_sg
+
+   sin_sg   => gridstruct%sin_sg
+   sina_6   => gridstruct%sina_6
+   dxa      => gridstruct%dxa
+   dya      => gridstruct%dya
+   rdxa     => gridstruct%rdxa
+   rdya     => gridstruct%rdya
+   dx6      => gridstruct%dx6
+   dy6      => gridstruct%dy6
+   rdx6     => gridstruct%rdx6
+   rdy6     => gridstruct%rdy6
+#endif
+
+   i1 = is-1-nord;    i2 = ie+1+nord
+   j1 = js-1-nord;    j2 = je+1+nord
+
+   do j=bd%jsd,bd%jed
+      do i=bd%isd,bd%ied
+         x5(i,j) = damp(i,j)
+      enddo
+   enddo
+   do j=bd%jsd,bd%jed+1
+      do i=bd%isd,bd%ied
+         d1(i,j) = u(i,j)
+      enddo
+   enddo
+   do j=bd%jsd,bd%jed
+      do i=bd%isd,bd%ied+1
+         d2(i,j) = v(i,j)
+      enddo
+   enddo
+
+! explicit scheme
+
+!
+   call copy_corners_for_udvd(d1,d2, npx, npy, 1, gridstruct%nested, bd,  &
+                              gridstruct%sw_corner, gridstruct%se_corner, &
+                              gridstruct%nw_corner, gridstruct%ne_corner)
+   call copy_corners(x5, npx, npy, 1, gridstruct%nested, bd, &
+                     gridstruct%sw_corner, gridstruct%se_corner, &
+                     gridstruct%nw_corner, gridstruct%ne_corner)
+   do j=bd%jsd+1,bd%jed
+      do i=bd%isd+1,bd%ied
+         x6(i,j) = 0.25*(x5(i,j)+x5(i,j-1)+x5(i-1,j)+x5(i-1,j-1))
+      enddo
+   enddo
+!
+! dux
+   do j=j1+1,j2
+      do i=i1+1,i2
+#ifdef USE_SG
+         fx1(i,j) = sina_6(i,j)*dy6(i,j)*rdx6(i,j)*(d1(i-1,j)-d1(i,j))
+#else
+         fx1(i,j) = gridstruct%delu_6(i,j)*(d1(i-1,j)-d1(i,j))
+#endif
+         fx1(i,j) = x6(i,j)*fx1(i,j)
+      enddo
+   enddo
+! dvx
+   do j=j1,j2
+      do i=i1,i2
+#ifdef USE_SG
+         fx2(i,j) = sin_sg(i,j,5)*dya(i,j)*rdxa(i,j)*(d2(i,j)-d2(i+1,j))
+#else
+         fx2(i,j) = gridstruct%delv_5(i,j)*(d2(i,j)-d2(i+1,j))
+#endif
+         fx2(i,j) = x5(i,j)*fx2(i,j)
+      enddo
+   enddo
+!
+   call copy_corners_for_udvd(d1,d2, npx, npy, 2, gridstruct%nested, bd,  &
+                              gridstruct%sw_corner, gridstruct%se_corner, &
+                              gridstruct%nw_corner, gridstruct%ne_corner)
+   call copy_corners(x5, npx, npy, 2, gridstruct%nested, bd, &
+                     gridstruct%sw_corner, gridstruct%se_corner, &
+                     gridstruct%nw_corner, gridstruct%ne_corner)
+   do j=bd%jsd+1,bd%jed
+      do i=bd%isd+1,bd%ied
+         x6(i,j) = 0.25*(x5(i,j)+x5(i,j-1)+x5(i-1,j)+x5(i-1,j-1))
+      enddo
+   enddo
+!
+! duy
+   do j=j1,j2
+      do i=i1,i2
+#ifdef USE_SG
+         fy1(i,j) = sin_sg(i,j,5)*dxa(i,j)*rdya(i,j)*(d1(i,j)-d1(i,j+1))
+#else
+         fy1(i,j) = gridstruct%delu_5(i,j)*(d1(i,j)-d1(i,j+1))
+#endif
+         fy1(i,j) = x5(i,j)*fy1(i,j)
+      enddo
+   enddo
+! dvy
+   do j=j1+1,j2
+      do i=i1+1,i2
+#ifdef USE_SG
+         fy2(i,j) = sina_6(i,j)*dx6(i,j)*rdy6(i,j)*(d2(i,j-1)-d2(i,j))
+#else
+         fy2(i,j) = gridstruct%delv_6(i,j)*(d2(i,j-1)-d2(i,j))
+#endif
+         fy2(i,j) = x6(i,j)*fy2(i,j)
+      enddo
+   enddo
+! ------------------
+   do j=j1+1,j2
+      do i=i1+1,i2-1
+         u(i,j) = u(i,j) +  &
+                 (fx1(i,j)-fx1(i+1,j)+fy1(i,j-1)-fy1(i,j)) *  &
+                  gridstruct%rarea_u(i,j)
+      enddo
+   enddo
+   do j=j1+1,j2-1
+      do i=i1+1,i2
+         v(i,j) = v(i,j) +  &
+                 (fx2(i-1,j)-fx2(i,j)+fy2(i,j)-fy2(i,j+1)) * &
+                  gridstruct%rarea_v(i,j)
+      enddo
+   enddo
+
+   return
+ end subroutine deln_flux_explm_udvd
+
+
+ subroutine copy_corners_for_udvd(ud, vd, npx, npy, dir, nested, bd, &
+                                  sw_corner, se_corner, nw_corner, ne_corner)
+type(fv_grid_bounds_type), intent(IN) :: bd
+ integer, intent(in):: npx, npy, dir
+ real, intent(inout):: ud(bd%isd:bd%ied  ,bd%jsd:bd%jed+1)
+ real, intent(inout):: vd(bd%isd:bd%ied+1,bd%jsd:bd%jed  )
+ logical, intent(IN) :: nested, sw_corner, se_corner, nw_corner, ne_corner
+ integer  i,j,ng
+
+ ng = bd%ng
+
+ if (nested) return
+
+ if ( dir == 1 ) then
+! XDir: D grid (note that npx = npy at grid corners
+    if ( sw_corner ) then
+         do j=1-ng,0
+            do i=1-ng,0
+               ud(i,j) = -vd(j,1-i)
+               vd(i,j) =  ud(j,2-i)
+            enddo
+         enddo
+    endif
+    if ( se_corner ) then
+         do j=1-ng,0
+            do i=npx,npx+ng-1
+               ud(i  ,j) =  vd(npy-j+1,i-npx+1)
+               vd(i+1,j) = -ud(npy-j  ,i-npx+2)
+            enddo
+         enddo
+    endif
+    if ( ne_corner ) then
+         do j=npy,npy+ng-1
+            do i=npx,npx+ng-1
+               ud(i  ,j+1) = -vd(j+1,2*npx-1-i)
+               vd(i+1,j  ) =  ud(j  ,2*npx-1-i)
+            enddo
+         enddo
+    endif
+    if ( nw_corner ) then
+         do j=npy,npy+ng-1
+            do i=1-ng,0
+               ud(i,j+1) =  vd(npy-j,i-1+npx)
+               vd(i,j  ) = -ud(npy-j,i-1+npx)
+            enddo
+         enddo
+    endif
+
+ elseif ( dir == 2 ) then
+! YDir: D grid
+
+    if ( sw_corner ) then
+         do j=1-ng,0
+            do i=1-ng,0
+               ud(i,j) =  vd(2-j,i)
+               vd(i,j) = -ud(1-j,i)
+            enddo
+         enddo
+    endif
+    if ( se_corner ) then
+         do j=1-ng,0
+            do i=npx,npx+ng-1
+               ud(i  ,j) = -vd(npy+j-1,npx-i)
+               vd(i+1,j) =  ud(npy+j-1,npx-i)
+            enddo
+         enddo
+    endif
+    if ( ne_corner ) then
+         do j=npy,npy+ng-1
+            do i=npx,npx+ng-1
+               ud(i  ,j+1) =  vd(2*npy-1-j,i  )
+               vd(i+1,j  ) = -ud(2*npy-1-j,i+1)
+            enddo
+         enddo
+    endif
+    if ( nw_corner ) then
+         do j=npy,npy+ng-1
+            do i=1-ng,0
+               ud(i,j+1) = -vd(j+2-npy,npx-i  )
+               vd(i,j  ) =  ud(j+1-npy,npx-i+1)
+            enddo
+         enddo
+    endif
+
+ endif
+
+ end subroutine copy_corners_for_udvd
+
 
 
 end module tp_core_mod
