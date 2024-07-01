@@ -1,21 +1,21 @@
 !***********************************************************************
-!*                   GNU Lesser General Public License                 
+!*                   GNU Lesser General Public License
 !*
 !* This file is part of the FV3 dynamical core.
 !*
-!* The FV3 dynamical core is free software: you can redistribute it 
+!* The FV3 dynamical core is free software: you can redistribute it
 !* and/or modify it under the terms of the
 !* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or 
+!* Free Software Foundation, either version 3 of the License, or
 !* (at your option) any later version.
 !*
-!* The FV3 dynamical core is distributed in the hope that it will be 
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
 !* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.  
+!* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
@@ -45,7 +45,11 @@ module nh_core_mod
 !   </tr>
 ! </table>
 
+#ifdef OVERLOAD_R4
+   use constantsR4_mod,     only: rdgas, cp_air, grav
+#else
    use constants_mod,     only: rdgas, cp_air, grav
+#endif
    use tp_core_mod,       only: fv_tp_2d
    use nh_utils_mod,      only: update_dz_c, update_dz_d, nh_bc
    use nh_utils_mod,      only: sim_solver, sim1_solver, sim3_solver
@@ -58,7 +62,7 @@ module nh_core_mod
    public Riem_Solver3, Riem_Solver_c, update_dz_c, update_dz_d, nh_bc
    real, parameter:: r3 = 1./3.
 
-CONTAINS 
+CONTAINS
 
   subroutine Riem_Solver3(ms, dt,   is,   ie,   js, je, km, ng,    &
                           isd, ied, jsd, jed, akap, cappa, cp,     &
@@ -68,7 +72,7 @@ CONTAINS
                           ptop, zs, q_con, w,  delz, pt,  &
                           delp, zh, pe, ppe, pk3, pk, peln, &
                           ws, scale_m,  p_fac, a_imp, &
-                          use_logp, last_call, fp_out)
+                          use_logp, last_call, fp_out, fast_tau_w_sec)
 !--------------------------------------------
 ! !OUTPUT PARAMETERS
 ! Ouput: gz: grav*height at edges
@@ -78,7 +82,7 @@ CONTAINS
    integer, intent(in):: ms, is, ie, js, je, km, ng
    integer, intent(in):: isd, ied, jsd, jed
    real, intent(in):: dt         !< the BIG horizontal Lagrangian time step
-   real, intent(in):: akap, cp, ptop, p_fac, a_imp, scale_m
+   real, intent(in):: akap, cp, ptop, p_fac, a_imp, scale_m, fast_tau_w_sec
    real, intent(in):: zs(isd:ied,jsd:jed)
    logical, intent(in):: last_call, use_logp, fp_out
    real, intent(in):: ws(is:ie,js:je)
@@ -112,10 +116,10 @@ CONTAINS
 !$OMP parallel do default(none) shared(is,ie,js,je,km,delp,ptop,peln1,pk3,ptk,akap,rgrav,zh,pt, &
 !$OMP                                  w,a_imp,dt,gama,ws,p_fac,scale_m,ms,delz,last_call,  &
 #ifdef MULTI_GASES
-!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con,kapad )          &
+!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con,kapad,fast_tau_w_sec )          &
 !$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2,kapad2)
 #else
-!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con )          &
+!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con,fast_tau_w_sec )     &
 !$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2)
 #endif
    do 2000 j=js, je
@@ -151,7 +155,7 @@ CONTAINS
             peg(i,k) = peg(i,k-1) + dm(i,k-1)*(1.-q_con(i,j,k-1))
             pelng(i,k) = log(peg(i,k))
 #endif
-!hmhj pk3 at interface , interface pk is using constant akap
+!< pk3 at interface , interface pk is using constant akap
             pk3(i,j,k) = exp(akap*peln2(i,k))
          enddo
       enddo
@@ -202,7 +206,7 @@ CONTAINS
                             kapad2,  &
 #endif
                             pe2, dm,   &
-                            pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), p_fac)
+                            pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), p_fac, fast_tau_w_sec)
       else
            call SIM_solver(dt, is, ie, km, rdgas, gama, gm2, cp2, akap, &
 #ifdef MULTI_GASES
@@ -210,7 +214,7 @@ CONTAINS
 #endif
                            pe2, dm,  &
                            pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), &
-                           a_imp, p_fac, scale_m)
+                           a_imp, p_fac, scale_m, fast_tau_w_sec)
       endif
 
 

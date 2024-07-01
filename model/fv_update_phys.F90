@@ -1,22 +1,22 @@
 
 !***********************************************************************
-!*                   GNU Lesser General Public License                 
+!*                   GNU Lesser General Public License
 !*
 !* This file is part of the FV3 dynamical core.
 !*
-!* The FV3 dynamical core is free software: you can redistribute it 
+!* The FV3 dynamical core is free software: you can redistribute it
 !* and/or modify it under the terms of the
 !* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or 
+!* Free Software Foundation, either version 3 of the License, or
 !* (at your option) any later version.
 !*
-!* The FV3 dynamical core is distributed in the hope that it will be 
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
 !* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.  
+!* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
@@ -89,7 +89,11 @@ module fv_update_phys_mod
 !   </tr>
 ! </table>
 
+#ifdef OVERLOAD_R4
+  use constantsR4_mod,      only: kappa, rdgas, rvgas, grav, cp_air, cp_vapor, pi=>pi_8, radius, TFREEZE
+#else
   use constants_mod,      only: kappa, rdgas, rvgas, grav, cp_air, cp_vapor, pi=>pi_8, radius, TFREEZE
+#endif
   use field_manager_mod,  only: MODEL_ATMOS
   use mpp_domains_mod,    only: mpp_update_domains, domain2d
   use mpp_parameter_mod,  only: AGRID_PARAM=>AGRID
@@ -99,7 +103,7 @@ module fv_update_phys_mod
   use tracer_manager_mod, only: get_tracer_index, adjust_mass, get_tracer_names
   use fv_mp_mod,          only: start_group_halo_update, complete_group_halo_update
   use fv_mp_mod,          only: group_halo_update_type
-  use fv_arrays_mod,      only: fv_flags_type, fv_nest_type, R_GRID, phys_diag_type
+  use fv_arrays_mod,      only: fv_flags_type, fv_nest_type, R_GRID, phys_diag_type, nudge_diag_type
   use boundary_mod,       only: nested_grid_BC
   use boundary_mod,       only: extrapolation_BC
   use fv_eta_mod,         only: get_eta_level
@@ -127,6 +131,7 @@ module fv_update_phys_mod
 
   public :: fv_update_phys, del2_phys
   real,parameter:: con_cp  = cp_air
+  real, parameter :: tmax = 330
 
   contains
 
@@ -135,7 +140,8 @@ module fv_update_phys_mod
                               ak, bk, phis, u_srf, v_srf, ts, delz, hydrostatic,  &
                               u_dt, v_dt, t_dt, moist_phys, Time, nudge,    &
                               gridstruct, lona, lata, npx, npy, npz, flagstruct,  &
-                              neststruct, bd, domain, ptop, phys_diag, q_dt)
+                              neststruct, bd, domain, ptop, phys_diag, &
+                              nudge_diag, q_dt)
     real, intent(in)   :: dt, ptop
     integer, intent(in):: is,  ie,  js,  je, ng
     integer, intent(in):: isd, ied, jsd, jed
@@ -164,6 +170,7 @@ module fv_update_phys_mod
     real, intent(inout):: t_dt(is:ie,js:je,npz)
     real, intent(inout), optional :: q_dt(is:ie,js:je,npz,nq)
     type(phys_diag_type), intent(inout) :: phys_diag
+    type(nudge_diag_type), intent(inout) :: nudge_diag
 
 ! Saved Bottom winds for GFDL Physics Interface
     real, intent(out), dimension(is:ie,js:je):: u_srf, v_srf, ts
@@ -179,7 +186,7 @@ module fv_update_phys_mod
     real, intent(inout):: qdiag(isd:ied,jsd:jed,npz,nq+1:flagstruct%ncnst) !< diagnostic tracers
 
 !-----------------------------------------------------------------------
-! Auxilliary pressure arrays:    
+! Auxilliary pressure arrays:
 ! The 5 vars below can be re-computed from delp and ptop.
 !-----------------------------------------------------------------------
 ! dyn_aux:
@@ -220,12 +227,13 @@ module fv_update_phys_mod
     integer  i, j, k, m, n, nwat
     integer  sphum, liq_wat, ice_wat, cld_amt   ! GFDL AM physics
     integer  rainwat, snowwat, graupel          ! GFDL Cloud Microphysics
+    integer  hailwat                            ! NSSL Cloud Microphysics
     integer  w_diff                             ! w-tracer for PBL diffusion
     real:: qstar, dbk, rdg, zvir, p_fac, cv_air, gama_dt, tbad
     logical :: bad_range
 
-!f1p                                                                                                                                                                                                                                        
-!account for change in air molecular weight because of H2O change                                                                                                                                                                            
+!f1p
+!account for change in air molecular weight because of H2O change
     logical, dimension(nq) :: conv_vmr_mmr
     real                   :: adj_vmr(is:ie,js:je,npz)
     character(len=32)      :: tracer_units, tracer_name
@@ -255,13 +263,14 @@ module fv_update_phys_mod
        end if
     end do
     end if
-    
+
     sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
     liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
     ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
     rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
     snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
     graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+    hailwat = get_tracer_index (MODEL_ATMOS, 'hailwat')
     cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
 
     if ( .not. hydrostatic ) then
@@ -304,7 +313,7 @@ module fv_update_phys_mod
        if (allocated(phys_diag%phys_qv_dt)) phys_diag%phys_qv_dt = q(is:ie,js:je,:,sphum)
        if (allocated(phys_diag%phys_ql_dt)) then
           if (liq_wat < 0) call mpp_error(FATAL, " phys_ql_dt needs at least one liquid water tracer defined")
-          phys_diag%phys_ql_dt = q(is:ie,js:je,:,liq_wat) 
+          phys_diag%phys_ql_dt = q(is:ie,js:je,:,liq_wat)
           if (rainwat > 0) phys_diag%phys_ql_dt = q(is:ie,js:je,:,rainwat) + phys_diag%phys_ql_dt
        endif
        if (allocated(phys_diag%phys_qi_dt)) then
@@ -321,7 +330,7 @@ module fv_update_phys_mod
 !$OMP parallel do default(none) &
 !$OMP             shared(is,ie,js,je,npz,flagstruct,pfull,q_dt,sphum,q,qdiag,  &
 !$OMP                    nq,w_diff,dt,nwat,liq_wat,rainwat,ice_wat,snowwat,    &
-!$OMP                    graupel,delp,cld_amt,hydrostatic,pt,t_dt,delz,adj_vmr,&
+!$OMP                    graupel,hailwat,delp,cld_amt,hydrostatic,pt,t_dt,delz,adj_vmr,&
 !$OMP                    gama_dt,cv_air,ua,u_dt,va,v_dt,isd,ied,jsd,jed,       &
 #ifdef MULTI_GASES
 !$OMP                    nn, nm,                                               &
@@ -375,7 +384,7 @@ module fv_update_phys_mod
 ! Update tracers:
 !----------------
         do m=1,nq
-          if( m /= w_diff ) then 
+          if( m /= w_diff ) then
             do j=js,je
               do i=is,ie
                 q(i,j,k,m) = q(i,j,k,m) + dt*q_dt(i,j,k,m)
@@ -410,12 +419,12 @@ module fv_update_phys_mod
         enddo
 
 !-----------------------------------------
-! Adjust mass mixing ratio of all tracers 
+! Adjust mass mixing ratio of all tracers
 !-----------------------------------------
         if ( nwat /=0 ) then
           do m=1,flagstruct%ncnst
 !-- check to query field_table to determine if tracer needs mass adjustment
-            if( m /= cld_amt .and. m /= w_diff .and. adjust_mass(MODEL_ATMOS,m)) then 
+            if( m /= cld_amt .and. m /= w_diff .and. adjust_mass(MODEL_ATMOS,m)) then
               if (m <= nq)  then
                 q(is:ie,js:je,k,m) = q(is:ie,js:je,k,m) / ps_dt(is:ie,js:je)
                 if (conv_vmr_mmr(m)) &
@@ -432,7 +441,7 @@ module fv_update_phys_mod
       if ( hydrostatic ) then
          do j=js,je
             call moist_cp(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
-                          ice_wat, snowwat, graupel, q, qc, cvm, pt(is:ie,j,k) )
+                          ice_wat, snowwat, graupel, hailwat, q, qc, cvm, pt(is:ie,j,k) )
             do i=is,ie
                pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*con_cp/cvm(i)
             enddo
@@ -442,7 +451,7 @@ module fv_update_phys_mod
 ! Constant pressure
              do j=js,je
                 call moist_cp(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
-                              ice_wat, snowwat, graupel, q, qc, cvm, pt(is:ie,j,k) )
+                              ice_wat, snowwat, graupel, hailwat, q, qc, cvm, pt(is:ie,j,k) )
                 do i=is,ie
                    delz(i,j,k) = delz(i,j,k) / pt(i,j,k)
                    pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*con_cp/cvm(i)
@@ -460,7 +469,7 @@ module fv_update_phys_mod
             else
                do j=js,je
                   call moist_cv(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
-                                ice_wat, snowwat, graupel, q, qc, cvm, pt(is:ie,j,k))
+                                ice_wat, snowwat, graupel, hailwat, q, qc, cvm, pt(is:ie,j,k))
                   do i=is,ie
                      pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*con_cp/cvm(i)
                   enddo
@@ -500,7 +509,7 @@ module fv_update_phys_mod
          phys_diag%phys_qi_dt = phys_diag%phys_qi_dt / dt
       endif
    endif
-    
+
    if ( flagstruct%range_warn ) then
       call range_check('PT UPDATE', pt, is, ie, js, je, ng, npz, gridstruct%agrid,    &
                           tcmin+TFREEZE, tcmax+TFREEZE, bad_range, Time)
@@ -530,7 +539,7 @@ module fv_update_phys_mod
         call get_atmos_nudge ( Time, dt, is, ie, js, je,    &
              npz, ng, ps(is:ie,js:je), ua(is:ie, js:je,:),  &
              va(is:ie,js:je,:), pt(is:ie,js:je,:),          &
-             q(is:ie,js:je,:,:), ps_dt(is:ie,js:je), u_dt(is:ie,js:je,:),  & 
+             q(is:ie,js:je,:,:), ps_dt(is:ie,js:je), u_dt(is:ie,js:je,:),  &
              v_dt(is:ie,js:je,:), t_dt(is:ie,js:je,:), &
              q_dt_nudge(is:ie,js:je,:,:) )
 
@@ -547,12 +556,10 @@ module fv_update_phys_mod
                   enddo
                enddo
             enddo
-        endif
 #elif defined (CLIMATE_NUDGE)
 !--------------------------------------------
 ! All fields will be updated; tendencies added
 !--------------------------------------------
-        call fv_climate_nudge ( Time, dt, is, ie, js, je, npz, pfull,    &
              lona(is:ie,js:je), lata(is:ie,js:je), phis(is:ie,js:je), &
              ptop, ak, bk, &
              ps(is:ie,js:je), ua(is:ie,js:je,:), va(is:ie,js:je,:), &
@@ -595,7 +602,7 @@ module fv_update_phys_mod
 ! All fields will be updated except winds; wind tendencies added
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,pe,delp,ps)
         do j=js,je
-          do k=2,npz+1                                                                             
+          do k=2,npz+1
             do i=is,ie
               pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
             enddo
@@ -609,18 +616,18 @@ module fv_update_phys_mod
                             nwat, q,  phis, gridstruct, bd, domain )
 #endif
 
-  endif         ! end nudging       
+  endif         ! end nudging
 
   if ( .not.flagstruct%dwind_2d ) then
 
                                                             call timing_on('COMM_TOTAL')
-      if ( gridstruct%square_domain ) then                  
+      if ( gridstruct%square_domain ) then
            call start_group_halo_update(i_pack(1), u_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.false.)
            call start_group_halo_update(i_pack(1), v_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
       else
            call start_group_halo_update(i_pack(1), u_dt, domain, complete=.false.)
            call start_group_halo_update(i_pack(1), v_dt, domain, complete=.true.)
-      endif                
+      endif
                                                            call timing_off('COMM_TOTAL')
   endif
 
@@ -638,7 +645,7 @@ module fv_update_phys_mod
 #endif
 !$OMP                                  ua,va,pkz,hydrostatic)
    do j=js,je
-      do k=2,npz+1                                                                             
+      do k=2,npz+1
          do i=is,ie
               pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
             peln(i,k,j) = log( pe(i,k,j) )
@@ -781,7 +788,7 @@ module fv_update_phys_mod
    real, intent(inout):: qdt(is-ngc:ie+ngc,js-ngc:je+ngc,km)
    type(fv_grid_type), intent(IN), target :: gridstruct
    type(domain2d), intent(INOUT) :: domain
-   
+
    real, pointer, dimension(:,:) :: rarea, dx, dy, sina_u, sina_v, rdxc, rdyc
    real, pointer, dimension(:,:,:) :: sin_sg
 !
@@ -847,7 +854,7 @@ module fv_update_phys_mod
               (mask(is,j)+mask(is,j+1))*dy(is,j)*(q(is-1,j,k)-q(is,j,k))*rdxc(is,j)* &
             0.5*(sin_sg(1,j,1) + sin_sg(0,j,3))
          if (ie+1==npx .and. .not. gridstruct%bounded_domain) fx(i,j) = &
-              (mask(ie+1,j)+mask(ie+1,j+1))*dy(ie+1,j)*(q(ie,j,k)-q(ie+1,j,k))*rdxc(ie+1,j)* & 
+              (mask(ie+1,j)+mask(ie+1,j+1))*dy(ie+1,j)*(q(ie,j,k)-q(ie+1,j,k))*rdxc(ie+1,j)* &
             0.5*(sin_sg(npx,j,1) + sin_sg(npx-1,j,3))
       enddo
       do j=js,je+1

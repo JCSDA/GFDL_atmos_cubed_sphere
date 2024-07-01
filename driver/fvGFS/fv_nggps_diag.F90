@@ -1,22 +1,22 @@
 
 !***********************************************************************
-!*                   GNU Lesser General Public License                 
+!*                   GNU Lesser General Public License
 !*
 !* This file is part of the FV3 dynamical core.
 !*
-!* The FV3 dynamical core is free software: you can redistribute it 
+!* The FV3 dynamical core is free software: you can redistribute it
 !* and/or modify it under the terms of the
 !* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or 
+!* Free Software Foundation, either version 3 of the License, or
 !* (at your option) any later version.
 !*
-!* The FV3 dynamical core is distributed in the hope that it will be 
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
 !* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.  
+!* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
@@ -45,10 +45,6 @@ module fv_nggps_diags_mod
 !     <td>MODEL_ATMOS</td>
 !   </tr>
 !   <tr>
-!     <td>fms_io_mod</td>
-!     <td>set_domain, nullify_domain</td>
-!   </tr>
-!   <tr>
 !     <td>fv_arrays_mod</td>
 !     <td>fv_atmos_type</td>
 !   </tr>
@@ -66,9 +62,12 @@ module fv_nggps_diags_mod
 !   </tr>
 ! </table>
 
- use mpp_mod,            only: mpp_pe, mpp_root_pe,FATAL,mpp_error
+ use mpp_mod,            only: mpp_pe, mpp_root_pe,FATAL,mpp_error, input_nml_file, stdlog
+#ifdef OVERLOAD_R4
+ use constantsR4_mod,    only: grav, rdgas
+#else
  use constants_mod,      only: grav, rdgas
- use fms_io_mod,         only: set_domain, nullify_domain
+#endif
  use time_manager_mod,   only: time_type, get_time
  use diag_manager_mod,   only: register_diag_field, send_data
  use diag_axis_mod,      only: get_axis_global_length, get_diag_axis, get_diag_axis_name
@@ -78,8 +77,24 @@ module fv_nggps_diags_mod
  use field_manager_mod,  only: MODEL_ATMOS
  use fv_diagnostics_mod, only: range_check, dbzcalc,max_vv,get_vorticity, &
                                max_uh,max_vorticity,bunkers_vector,       &
-                               helicity_relative_CAPS,max_vorticity_hy1 
+                               helicity_relative_CAPS,max_vorticity_hy1
  use fv_arrays_mod,      only: fv_atmos_type
+ use module_diag_hailcast, only: do_hailcast, id_hailcast_dhail,         &
+                                 id_hailcast_dhail1, id_hailcast_dhail2, &
+                                 id_hailcast_dhail3, id_hailcast_dhail4, id_hailcast_dhail5, &
+                                 id_hailcast_wdur, id_hailcast_wup_mask, &
+                                 hailcast_dhail1, hailcast_dhail1_max,   &
+                                 hailcast_dhail2, hailcast_dhail2_max,   &
+                                 hailcast_dhail3, hailcast_dhail3_max,   &
+                                 hailcast_dhail4, hailcast_dhail4_max,   &
+                                 hailcast_dhail5, hailcast_dhail5_max,   &
+                                 hailcast_wdur, hailcast_wup_mask, hailcast_dhail_max, &
+                                 kstt_hc, kend_hc,                       &
+                                 kstt_hc1,kstt_hc2,kstt_hc3,kstt_hc4,kstt_hc5, &
+                                 kend_hc1,kend_hc2,kend_hc3,kend_hc4,kend_hc5, &
+                                 kstt_hcd, kend_hcd, kstt_hcm, kend_hcm,       &
+                                 hailcast_init, hailcast_compute
+ use fms_mod,            only: check_nml_error
  use mpp_domains_mod,    only: domain1d, domainUG
 #ifdef MULTI_GASES
  use multi_gases_mod,  only:  virq
@@ -101,9 +116,12 @@ module fv_nggps_diags_mod
  integer :: kend_pfnh, kend_w, kend_delz, kend_diss, kend_ps,kend_hs
  integer :: kstt_dbz, kend_dbz, kstt_omga, kend_omga
  integer :: kstt_windvect, kend_windvect
+ integer :: kstt_o3_ave, kend_o3_ave, kstt_pm25_ave, kend_pm25_ave
+ integer :: kstt_no_ave, kend_no_ave, kstt_no2_ave, kend_no2_ave
  integer :: id_wmaxup,id_wmaxdn,kstt_wup, kend_wup,kstt_wdn,kend_wdn
  integer :: id_uhmax03,id_uhmin03,id_uhmax25,id_uhmin25,id_maxvort01
  integer :: id_maxvorthy1,kstt_maxvorthy1,kstt_maxvort01,id_ustm
+ integer :: id_o3_ave,id_pm25_ave,id_no_ave,id_no2_ave
  integer :: kend_maxvorthy1,kend_maxvort01,id_vstm,id_srh01,id_srh03
  integer :: kstt_uhmax03,kstt_uhmin03,kend_uhmax03,kend_uhmin03
  integer :: kstt_uhmax25,kstt_uhmin25,kend_uhmax25,kend_uhmin25
@@ -123,13 +141,12 @@ module fv_nggps_diags_mod
  logical :: use_wrtgridcomp_output=.false.
  integer :: sphum, liq_wat, ice_wat       !< GFDL physics
  integer :: rainwat, snowwat, graupel
- real :: vrange(2) = (/ -330.,  330. /)  !< winds
- real :: wrange(2) = (/ -100.,  100. /)  !< vertical wind
- real :: trange(2) = (/  100.,  350. /)  !< temperature
+ real :: vrange(2), wrange(2), trange(2)
  real :: skrange(2) = (/ -10000000.0,  10000000.0 /)  !< dissipation estimate for SKEB
 
 ! file name
  character(len=64) :: file_name = 'gfs_dyn'
+ INTEGER :: istatus
 
 ! tracers
  character(len=128)   :: tname
@@ -143,6 +160,8 @@ module fv_nggps_diags_mod
  real, dimension(:,:),allocatable :: up2,dn2,uhmax03,uhmin03
  real, dimension(:,:),allocatable :: uhmax25,uhmin25,maxvort01
  real, dimension(:,:),allocatable :: maxvorthy1,maxvort02
+ real, dimension(:,:,:),allocatable :: o3_ave,pm25_ave,no_ave,no2_ave
+
  public :: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 #ifdef use_WRTCOMP
  public :: fv_dyn_bundle_setup
@@ -156,6 +175,20 @@ contains
     type(time_type), intent(in) :: Time
     integer :: n, i, j, nz
 
+    namelist /fv_diagnostics_nml/ do_hailcast
+    integer :: ios, ierr
+    integer :: unit
+
+    !namelist file for hailcast
+
+    ! Read Main namelist
+    read (input_nml_file,fv_diagnostics_nml,iostat=ios)
+    ierr = check_nml_error(ios,'fv_diagnostics_nml')
+
+    unit = stdlog()
+    write(unit, nml=fv_diagnostics_nml)
+    !end hailcast nml
+
     n = 1
     ncnsto = Atm(1)%ncnst
     npzo   = Atm(1)%npz
@@ -164,8 +197,6 @@ contains
     isdo = Atm(n)%bd%isd; iedo = Atm(n)%bd%ied
     jsdo = Atm(n)%bd%jsd; jedo = Atm(n)%bd%jed
     hydrostatico = Atm(n)%flagstruct%hydrostatic
-
-    call set_domain(Atm(1)%domain)  ! Set domain so that diag_manager can access tile information
 
     sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
     liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
@@ -183,6 +214,20 @@ contains
     id_tracer(:) = 0
     kstt_tracer(:) = 0
     kend_tracer(:) = 0
+
+    if ( Atm(n)%flagstruct%molecular_diffusion ) then
+         vrange = (/ -830.,  830. /)  !< winds for wam
+         wrange = (/ -300.,  300. /)  !< vertical wind for wam
+         trange = (/  100., 3000. /)  !< temperature for wam
+    else
+         vrange = (/ -330.,  330. /)  !< winds
+         wrange = (/ -100.,  100. /)  !< vertical wind
+#ifdef MULTI_GASES
+         trange = (/  100., 3000. /)  !< temperature
+#else
+         trange = (/  100.,  350. /)  !< temperature
+#endif
+    endif
 
     if (Atm(n)%flagstruct%write_3d_diags) then
 !-------------------
@@ -208,7 +253,7 @@ contains
          windvect = 0.
        endif
 
-       if( Atm(n)%flagstruct%hydrostatic ) then 
+       if( Atm(n)%flagstruct%hydrostatic ) then
           id_pfhy = register_diag_field ( trim(file_name), 'pfhy', axes(1:3), Time,        &
                'hydrostatic pressure', 'pa', missing_value=missing_value )
           if (id_pfhy>0) then
@@ -351,7 +396,7 @@ contains
        if( id_wmaxup > 0) then
           allocate ( up2(isco:ieco,jsco:jeco) )
           kstt_wup = nlevs+1; kend_wup = nlevs+1
-          nlevs = nlevs + 1 
+          nlevs = nlevs + 1
        endif
        id_wmaxdn = register_diag_field ( trim(file_name), 'wmaxdn',axes(1:2), Time,      &
           'Max hourly downdraft velocity', 'm/s', missing_value=missing_value )
@@ -393,6 +438,34 @@ contains
           kstt_uhmin25 = nlevs+1; kend_uhmin25 = nlevs+1
           nlevs = nlevs + 1
        endif
+        id_o3_ave = register_diag_field ( trim(file_name), 'o3_ave',axes(1:3), Time,      &
+           'Hourly averaged o3', 'ppbv', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_o3_ave > 0 ) then
+           allocate ( o3_ave(isco:ieco,jsco:jeco,npzo) )
+           kstt_o3_ave = nlevs+1; kend_o3_ave = nlevs+npzo
+           nlevs = nlevs + npzo
+       endif
+        id_no_ave = register_diag_field ( trim(file_name), 'no_ave',axes(1:3), Time,      &
+           'Hourly averaged no', 'ppbv', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_no_ave > 0 ) then
+           allocate ( no_ave(isco:ieco,jsco:jeco,npzo) )
+           kstt_no_ave = nlevs+1; kend_no_ave = nlevs+npzo
+           nlevs = nlevs + npzo
+       endif
+        id_no2_ave = register_diag_field ( trim(file_name), 'no2_ave',axes(1:3), Time,      &
+           'Hourly averaged no2', 'ppbv', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_no2_ave > 0 ) then
+           allocate ( no2_ave(isco:ieco,jsco:jeco,npzo) )
+           kstt_no2_ave = nlevs+1; kend_no2_ave = nlevs+npzo
+           nlevs = nlevs + npzo
+       endif
+        id_pm25_ave = register_diag_field ( trim(file_name), 'pm25_ave',axes(1:3), Time,      &
+           'Hourly averaged pm25', 'ug/m3', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_pm25_ave > 0 ) then
+           allocate ( pm25_ave(isco:ieco,jsco:jeco,npzo) )
+           kstt_pm25_ave = nlevs+1; kend_pm25_ave = nlevs+npzo
+           nlevs = nlevs + npzo
+       endif
 !
        nz = size(atm(1)%ak)
        allocate(ak(nz))
@@ -422,6 +495,13 @@ contains
          enddo
 !        if(mpp_pe()==mpp_root_pe())print *,'in fv_dyn bundle,lat=',lat(isco,jsco),lat(ieco-2:ieco,jeco-2:jeco)*180./3.14157
        endif
+
+    endif
+
+    if (do_hailcast) then
+        !initialize hailcast
+        call hailcast_init(file_name, axes, Time, isco,ieco,jsco,jeco,      &
+                isdo,iedo,jsdo,jedo,nlevs, missing_value, istatus)
     endif
 !
 !------------------------------------
@@ -468,7 +548,7 @@ contains
     !--- A-GRID WINDS
     if ( .not. allocated(buffer_dyn)) allocate(buffer_dyn(isco:ieco,jsco:jeco,nlevs))
     if(id_ua > 0) call store_data(id_ua, Atm(n)%ua(isco:ieco,jsco:jeco,:), Time, kstt_ua, kend_ua)
-    
+
     if(id_va > 0) call store_data(id_va, Atm(n)%va(isco:ieco,jsco:jeco,:), Time, kstt_va, kend_va)
 
     !--- set up 3D wind vector
@@ -525,7 +605,7 @@ contains
     if( Atm(n)%flagstruct%hydrostatic .and. id_pfhy > 0 ) then
        do k=1,npzo
          do j=jsco,jeco
-           do i=isco,ieco         
+           do i=isco,ieco
              wk(i,j,k) = 0.5 *(Atm(n)%pe(i,k,j)+Atm(n)%pe(i,k+1,j))
            enddo
          enddo
@@ -538,7 +618,7 @@ contains
     if(id_delp > 0 .or. ((.not. Atm(n)%flagstruct%hydrostatic) .and. id_pfnh > 0)) then
        do k=1,npzo
          do j=jsco,jeco
-           do i=isco,ieco         
+           do i=isco,ieco
              wk(i,j,k) = Atm(n)%delp(i,j,k)*(1.-sum(Atm(n)%q(i,j,k,2:Atm(n)%flagstruct%nwat)))
            enddo
          enddo
@@ -584,7 +664,7 @@ contains
     endif
 #else
     !--- DELP
-    if(id_delp > 0) call store_data(id_delp, Atm(n)%delp(isco:ieco,jsco:jeco,:), Time, kstt_delp)
+    if(id_delp > 0) call store_data(id_delp, Atm(n)%delp(isco:ieco,jsco:jeco,:), Time, kstt_delp, kend_delp)
 
     !--- Surface Pressure (PS)
     if( id_ps > 0) then
@@ -602,7 +682,7 @@ contains
            do i=isco,ieco
              wk(i,j,k) = -Atm(n)%delp(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*rdgas*Atm(n)%pt(i,j,k)
 #ifdef MULTI_GASES
-             wk(i,j,k) = wk(i,j,k)*virq(Atm(n)%q(i,j,k,:)
+             wk(i,j,k) = wk(i,j,k)*virq(Atm(n)%q(i,j,k,:))
 #else
              wk(i,j,k) = wk(i,j,k)*(1.+zvir*Atm(n)%q(i,j,k,sphum))
 #endif
@@ -634,7 +714,7 @@ contains
 !       'rdgas=',rdgas,'grav=',grav,'stndrd_atmos_lapse=',stndrd_atmos_lapse,rdgas/grav*stndrd_atmos_lapse
       call store_data(id_ps, wk, Time, kstt_ps, kend_ps)
     endif
-    
+
     if( id_hs > 0) then
       do j=jsco,jeco
         do i=isco,ieco
@@ -648,12 +728,12 @@ contains
     if ( rainwat > 0 .and. id_dbz>0) then
       call dbzcalc(Atm(n)%q, Atm(n)%pt, Atm(n)%delp, Atm(n)%peln, Atm(n)%delz, &
                    wk, wk2, allmax, Atm(n)%bd, npzo, Atm(n)%ncnst, Atm(n)%flagstruct%hydrostatic, &
-                   zvir, .false., .false., .false., .true. ) ! GFDL MP has constant N_0 intercept
+                   zvir, .false., .false., .false., .true., Atm(n)%flagstruct%do_inline_mp ) ! GFDL MP has constant N_0 intercept
       call store_data(id_dbz, wk, Time, kstt_dbz, kend_dbz)
     endif
 
     deallocate ( wk )
-    !---u and v comp of storm motion, 0-1, 0-3km SRH 
+    !---u and v comp of storm motion, 0-1, 0-3km SRH
     if ( id_ustm > 0 .or. id_vstm > 0 .or. id_srh01 > 0 .or. id_srh03 > 0) then
       if ( id_ustm > 0 .and. id_vstm > 0 .and. id_srh01 > 0 .and. id_srh03 > 0) then
         call bunkers_vector(isco,ieco,jsco,jeco,ngc,npzo,zvir,sphum,ustm,vstm,    &
@@ -688,6 +768,22 @@ contains
         deallocate ( srh01 )
         deallocate ( srh03 )
 
+    !--- hourly averaged o3  
+    if ( id_o3_ave > 0) then
+      call store_data(id_o3_ave, o3_ave, Time, kstt_o3_ave, kend_o3_ave)
+    endif
+     !--- hourly averaged no  
+    if ( id_no_ave > 0) then
+      call store_data(id_no_ave, no_ave, Time, kstt_no_ave, kend_no_ave)
+    endif
+     !--- hourly averaged no2  
+    if ( id_no2_ave > 0) then
+      call store_data(id_no2_ave, no2_ave, Time, kstt_no2_ave, kend_no2_ave)
+    endif
+    !--- hourly averaged pm25  
+    if ( id_pm25_ave > 0) then
+      call store_data(id_pm25_ave, pm25_ave, Time, kstt_pm25_ave, kend_pm25_ave)
+    endif
     !--- max hourly 0-1km vert. vorticity
     if ( id_maxvort01 > 0) then
       call store_data(id_maxvort01, maxvort01, Time, kstt_maxvort01, kend_maxvort01)
@@ -696,12 +792,12 @@ contains
     if ( id_maxvort02 > 0) then
       call store_data(id_maxvort02, maxvort02, Time, kstt_maxvort02, kend_maxvort02)
     endif
-    !--- max hourly hybrid lev 1 vert. vorticity 
+    !--- max hourly hybrid lev 1 vert. vorticity
     if ( id_maxvorthy1 > 0) then
       call store_data(id_maxvorthy1, maxvorthy1, Time, kstt_maxvorthy1, kend_maxvorthy1)
     endif
-!   
-    !--- max hourly updraft velocity 
+!
+    !--- max hourly updraft velocity
     if ( id_wmaxup > 0) then
       call store_data(id_wmaxup, up2, Time, kstt_wup, kend_wup)
     endif
@@ -709,7 +805,7 @@ contains
     if ( id_wmaxdn > 0) then
       call store_data(id_wmaxdn, dn2, Time, kstt_wdn, kend_wdn)
     endif
-    !--- max hourly max 0-3km updraft helicity 
+    !--- max hourly max 0-3km updraft helicity
     if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_uhmax03 > 0) then
       call store_data(id_uhmax03, uhmax03, Time, kstt_uhmax03, kend_uhmax03)
     endif
@@ -718,7 +814,7 @@ contains
     if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_uhmin03 > 0) then
       call store_data(id_uhmin03, uhmin03, Time, kstt_uhmin03, kend_uhmin03)
     endif
-!   
+!
     !--- max hourly max 2-5km updraft helicity
     if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_uhmax25 > 0) then
       call store_data(id_uhmax25, uhmax25, Time, kstt_uhmax25, kend_uhmax25)
@@ -729,7 +825,48 @@ contains
       call store_data(id_uhmin25, uhmin25, Time, kstt_uhmin25, kend_uhmin25)
     endif
 
-    call nullify_domain()
+    IF ( .not. Atm(n)%flagstruct%hydrostatic .and. do_hailcast ) THEN
+        !--- max hourly hailcast hail diameter
+        if (id_hailcast_dhail > 0) then
+          call store_data(id_hailcast_dhail, hailcast_dhail_max, Time, kstt_hc, kend_hc)
+        endif
+
+        !--- max hourly hailcast hail diameter (embryo 1)
+        if ( id_hailcast_dhail1 > 0) then
+          call store_data(id_hailcast_dhail1, hailcast_dhail1_max, Time, kstt_hc1, kend_hc1)
+        endif
+
+        !--- max hourly hailcast hail diameter (embryo 2)
+        if ( id_hailcast_dhail2 > 0) then
+          call store_data(id_hailcast_dhail2, hailcast_dhail2_max, Time, kstt_hc2, kend_hc2)
+        endif
+
+        !--- max hourly hailcast hail diameter (embryo 3)
+        if ( id_hailcast_dhail3 > 0) then
+          call store_data(id_hailcast_dhail3, hailcast_dhail3_max, Time, kstt_hc3, kend_hc3)
+        endif
+
+        !--- max hourly hailcast hail diameter (embryo 4)
+        if ( id_hailcast_dhail4 > 0) then
+          call store_data(id_hailcast_dhail4, hailcast_dhail4_max, Time, kstt_hc4, kend_hc4)
+        endif
+
+        !--- max hourly hailcast hail diameter (embryo 5)
+        if ( id_hailcast_dhail5 > 0) then
+          call store_data(id_hailcast_dhail5, hailcast_dhail5_max, Time, kstt_hc5, kend_hc5)
+        endif
+
+        !--- hailcast updraft duration
+        if ( id_hailcast_wdur > 0) then
+          call store_data(id_hailcast_wdur, hailcast_wdur(isco:ieco, jsco:jeco), Time, kstt_hcd, kend_hcd)
+        endif
+        !--- hailcast updraft mask
+        if ( id_hailcast_wup_mask > 0) then
+          call store_data(id_hailcast_wup_mask, hailcast_wup_mask(isco:ieco, jsco:jeco), Time, kstt_hcm, kend_hcm)
+        endif
+    END IF
+
+    !call nullify_domain()
 
  end subroutine fv_nggps_diag
 
@@ -738,12 +875,14 @@ contains
     type(time_type),     intent(in) :: Time_step_atmos
     real,                intent(in):: zvir
     integer :: i, j, k, n, ngc, nq, itrac
+    integer :: o3_idx,no_idx,no2_idx,pm25_idx
     integer seconds, days, nsteps_per_reset
     logical, save :: first_call=.true.
     real, save :: first_time = 0.
-    integer, save :: kdtt = 0
+    integer, save :: kdtt = 0, kdtt1 = 0
+    real, save :: ucf1 = 1000., ucf2 = 1.
     real :: avg_max_length
-    real,dimension(:,:,:),allocatable :: vort 
+    real,dimension(:,:,:),allocatable :: vort
     n = 1
     ngc = Atm(n)%ng
     nq = size (Atm(n)%q,4)
@@ -757,7 +896,7 @@ contains
 !abort
 !
      if(id_wmaxup > 0 .and. id_wmaxdn > 0 .and. id_uhmax03 > 0 .and. id_uhmin03 > 0 &
-          .and. id_uhmax25 > 0 .and. id_uhmin25 > 0 .and. id_maxvort01 > 0  & 
+          .and. id_uhmax25 > 0 .and. id_uhmin25 > 0 .and. id_maxvort01 > 0  &
           .and. id_maxvorthy1 > 0 .and. id_maxvort02 > 0) then
        allocate ( vort(isco:ieco,jsco:jeco,npzo) )
        if (first_call) then
@@ -767,17 +906,17 @@ contains
          kdtt=0
        endif
        nsteps_per_reset = nint(avg_max_length/first_time)
-       do j=jsco,jeco
-          do i=isco,ieco
-             if(mod(kdtt,nsteps_per_reset)==0)then
-                up2(i,j) = -999.
-                dn2(i,j) = 999.
-                maxvorthy1(i,j)= 0.
-                maxvort01(i,j)= 0.
-                maxvort02(i,j)= 0.
-             endif
-          enddo
-        enddo
+       if(mod(kdtt,nsteps_per_reset)==0)then
+            do j=jsco,jeco
+              do i=isco,ieco
+                    up2(i,j) = -999.
+                    dn2(i,j) = 999.
+                    maxvorthy1(i,j)= 0.
+                    maxvort01(i,j)= 0.
+                    maxvort02(i,j)= 0.
+              enddo
+            enddo
+       endif
          call get_vorticity(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo, &
                            npzo,Atm(n)%u,Atm(n)%v,vort,    &
                            Atm(n)%gridstruct%dx,Atm(n)%gridstruct%dy,&
@@ -795,16 +934,16 @@ contains
                            vort,maxvort02,0., 2.e3)
          if( .not.Atm(n)%flagstruct%hydrostatic ) then
             call max_vv(isco,ieco,jsco,jeco,npzo,ngc,up2,dn2,Atm(n)%pe,Atm(n)%w)
-            do j=jsco,jeco
-               do i=isco,ieco
-                  if(mod(kdtt,nsteps_per_reset)==0)then
-                    uhmax03(i,j)= 0.
-                    uhmin03(i,j)= 0.
-                    uhmax25(i,j)= 0.
-                    uhmin25(i,j)= 0.
-                  endif
-               enddo
-             enddo
+            if(mod(kdtt,nsteps_per_reset)==0)then
+                do j=jsco,jeco
+                  do i=isco,ieco
+                       uhmax03(i,j)= 0.
+                       uhmin03(i,j)= 0.
+                       uhmax25(i,j)= 0.
+                       uhmin25(i,j)= 0.
+                  enddo
+                enddo
+            endif
 
              call max_uh(isco,ieco,jsco,jeco,ngc,npzo,zvir, &
                            sphum,uhmax03,uhmin03,Atm(n)%w,vort,Atm(n)%delz, &
@@ -817,8 +956,8 @@ contains
                            Atm(n)%pt,Atm(n)%peln,Atm(n)%phis,grav, &
                            2.e3, 5.e3)
          endif
-    kdtt=kdtt+1
-    deallocate (vort)
+         kdtt=kdtt+1
+         deallocate (vort)
     else
        print *,'Missing max/min hourly field in diag_table'
        print *,'Make sure the following are listed in the diag_table under gfs_dyn:'
@@ -827,7 +966,75 @@ contains
        stop
     endif
    endif
+
+   if ( id_o3_ave > 0 .and. id_no_ave >0 &
+       .and. id_no2_ave > 0 .and. id_pm25_ave >0 ) then
+       o3_idx = get_tracer_index(MODEL_ATMOS, 'O3')
+       no_idx = get_tracer_index(MODEL_ATMOS, 'NO')
+       no2_idx = get_tracer_index(MODEL_ATMOS, 'NO2')
+       pm25_idx = get_tracer_index(MODEL_ATMOS, 'PM25_TOT')
+    if (first_call) then
+       call get_time(Time_step_atmos, seconds,  days)
+       first_time=seconds
+       first_call=.false.
+       kdtt1=0
+    endif
+       nsteps_per_reset = nint(avg_max_length/first_time)
+    if(mod(kdtt1,nsteps_per_reset)==0)then
+       do k=1,npzo
+        do j=jsco,jeco
+         do i=isco,ieco
+            o3_ave(i,j,k)= 0.
+            no_ave(i,j,k)= 0.
+            no2_ave(i,j,k)= 0.
+            pm25_ave(i,j,k)= 0.
+         enddo      
+        enddo      
+       enddo      
+    endif
+    call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+            Atm(n)%q,o3_idx,o3_ave,nsteps_per_reset,ucf1)
+    call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+            Atm(n)%q,no_idx,no_ave,nsteps_per_reset,ucf1)
+    call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+            Atm(n)%q,no2_idx,no2_ave,nsteps_per_reset,ucf1)
+    call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+            Atm(n)%q,pm25_idx,pm25_ave,nsteps_per_reset,ucf2)
+    kdtt1=kdtt1+1
+   !else
+   ! print *,'calculating hourly-averaegtd o3 or pm25'
+   ! call mpp_error(FATAL, 'Missing hourly-averaged o3 or pm25 in diag_table')
+   ! stop
+   endif
+
+   !allocate hailcast met field arrays
+   if (do_hailcast) then
+        call hailcast_compute(Atm(n),sphum,liq_wat,ice_wat,rainwat,snowwat,graupel, zvir, &
+                isco,jsco,ieco,jeco,isdo,iedo,jsdo,jedo,npzo,           &
+                Time_step_atmos,avg_max_length)
+   endif
+
  end subroutine fv_nggps_tavg
+!
+ subroutine average_tracer_hy1(is,ie,js,je,isd,ied,jsd,jed, &
+                 ncns,npz,tracer,tr_idx,tracer_ave,nstp,unitcf) 
+   integer, intent(in):: is, ie, js, je, isd, ied, jsd, jed
+   integer, intent(in):: ncns, npz, nstp, tr_idx
+   real, intent(in) :: unitcf
+   real, intent(in), dimension(isd:ied,jsd:jed,npz,ncns):: tracer 
+   real, intent(inout), dimension(is:ie,js:je,npz):: tracer_ave
+   integer i, j, k
+!
+   do k=1,npz
+    do j=js,je
+     do i=is,ie
+        tracer_ave(i,j,k)=tracer_ave(i,j,k)+tracer(i,j,k,tr_idx)/nstp*unitcf
+     enddo 
+    enddo 
+   enddo  
+
+ end subroutine average_tracer_hy1
+
 !
  subroutine store_data(id, work, Time, nstt, nend)
    integer, intent(in)         :: id
@@ -1000,10 +1207,11 @@ contains
        line=__LINE__, &
        file=__FILE__)) &
        return  ! bail out
+     deallocate(axis_name_vert)
    endif
 
    do id = 1,num_axes
-     axis_length =  get_axis_global_length(axes(id)) 
+     axis_length =  get_axis_global_length(axes(id))
      allocate(axis_data(axis_length))
      call get_diag_axis( axes(id), axis_name(id), units, long_name, cart_name, &
                          direction, edges, Domain, DomainU, axis_data,         &
@@ -1220,6 +1428,34 @@ contains
    enddo
 !
 !
+   if ( id_o3_ave > 0 ) then
+     call find_outputname(trim(file_name),'o3_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged o3', 'ppbv', "time: point",   &
+          axes(1:3), fcst_grid, kstt_o3_ave,kend_o3_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+!
+   if ( id_no_ave > 0 ) then
+     call find_outputname(trim(file_name),'no_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged no', 'ppbv', "time: point",   &
+           axes(1:3), fcst_grid, kstt_no_ave,kend_no_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+!
+   if ( id_no2_ave > 0 ) then
+     call find_outputname(trim(file_name),'no2_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged no2', 'ppbv', "time: point",   &
+          axes(1:3), fcst_grid, kstt_no2_ave,kend_no2_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+!
+   if ( id_pm25_ave > 0 ) then
+     call find_outputname(trim(file_name),'pm25_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged pm25', 'ug/m3', "time: point",   &
+          axes(1:3), fcst_grid, kstt_pm25_ave,kend_pm25_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+!
    if( id_ps > 0) then
      call find_outputname(trim(file_name),'ps',output_name)
      call add_field_to_bundle(trim(output_name),'surface pressure', 'pa', "time: point",   &
@@ -1332,6 +1568,72 @@ contains
      if(rc==0)  num_field_dyn=num_field_dyn+1
    endif
 
+   if( .not.hydrostatico .and. do_hailcast) then
+        if( id_hailcast_dhail > 0 ) then
+            call find_outputname(trim(file_name),'hailcast_dhail_max',output_name)
+            if(mpp_pe()==mpp_root_pe())print *,'max hourly hailcast hail diameter, output name=',trim(output_name)
+            call add_field_to_bundle(trim(output_name),'Max hourly hailcast hail diameter', 'mm', "time: point",   &
+                 axes(1:2), fcst_grid, kstt_hc,kend_hc, dyn_bundle, output_file, rcd=rc)
+            if(rc==0)  num_field_dyn=num_field_dyn+1
+        endif
+
+        if( id_hailcast_dhail1 > 0 ) then
+          call find_outputname(trim(file_name),'hailcast_dhail1_max',output_name)
+          if(mpp_pe()==mpp_root_pe())print *,'max hourly hailcast hail diameter (embryo 1), output name=',trim(output_name)
+          call add_field_to_bundle(trim(output_name),'Max hourly hailcast hail diameter (embryo 1)', 'mm', "time: point",   &
+               axes(1:2), fcst_grid, kstt_hc1,kend_hc1, dyn_bundle, output_file, rcd=rc)
+          if(rc==0)  num_field_dyn=num_field_dyn+1
+        endif
+
+        if( id_hailcast_dhail2 > 0 ) then
+          call find_outputname(trim(file_name),'hailcast_dhail2_max',output_name)
+          if(mpp_pe()==mpp_root_pe())print *,'max hourly hailcast hail diameter (embryo 2), output name=',trim(output_name)
+          call add_field_to_bundle(trim(output_name),'Max hourly hailcast hail diameter (embryo 2)', 'mm', "time: point",   &
+               axes(1:2), fcst_grid, kstt_hc2,kend_hc2, dyn_bundle, output_file, rcd=rc)
+          if(rc==0)  num_field_dyn=num_field_dyn+1
+        endif
+
+        if( id_hailcast_dhail3 > 0 ) then
+          call find_outputname(trim(file_name),'hailcast_dhail3_max',output_name)
+          if(mpp_pe()==mpp_root_pe())print *,'max hourly hailcast hail diameter (embryo 3), output name=',trim(output_name)
+          call add_field_to_bundle(trim(output_name),'Max hourly hailcast hail diameter (embryo 3)', 'mm', "time: point",   &
+               axes(1:2), fcst_grid, kstt_hc3,kend_hc3, dyn_bundle, output_file, rcd=rc)
+          if(rc==0)  num_field_dyn=num_field_dyn+1
+        endif
+
+        if( id_hailcast_dhail4 > 0 ) then
+          call find_outputname(trim(file_name),'hailcast_dhail4_max',output_name)
+          if(mpp_pe()==mpp_root_pe())print *,'max hourly hailcast hail diameter (embryo 4), output name=',trim(output_name)
+          call add_field_to_bundle(trim(output_name),'Max hourly hailcast hail diameter (embryo 4)', 'mm', "time: point",   &
+               axes(1:2), fcst_grid, kstt_hc4,kend_hc4, dyn_bundle, output_file, rcd=rc)
+          if(rc==0)  num_field_dyn=num_field_dyn+1
+        endif
+
+        if( id_hailcast_dhail5 > 0 ) then
+          call find_outputname(trim(file_name),'hailcast_dhail5_max',output_name)
+          if(mpp_pe()==mpp_root_pe())print *,'max hourly hailcast hail diameter (embryo 5), output name=',trim(output_name)
+          call add_field_to_bundle(trim(output_name),'Max hourly hailcast hail diameter (embryo 5)', 'mm', "time: point",   &
+               axes(1:2), fcst_grid, kstt_hc5,kend_hc5, dyn_bundle, output_file, rcd=rc)
+          if(rc==0)  num_field_dyn=num_field_dyn+1
+        endif
+
+        if( id_hailcast_wdur > 0 ) then
+          call find_outputname(trim(file_name),'hailcast_wdur',output_name)
+          if(mpp_pe()==mpp_root_pe())print *,'hailcast updraft duration, output name=',trim(output_name)
+          call add_field_to_bundle(trim(output_name),'Hailcast updraft duration', 's', "time: point",   &
+               axes(1:2), fcst_grid, kstt_hcd,kend_hcd, dyn_bundle, output_file, rcd=rc)
+          if(rc==0)  num_field_dyn=num_field_dyn+1
+        endif
+
+        if( id_hailcast_wup_mask > 0 ) then
+          call find_outputname(trim(file_name),'hailcast_wup_mask',output_name)
+          if(mpp_pe()==mpp_root_pe())print *,'hailcast updraft mask, output name=',trim(output_name)
+          call add_field_to_bundle(trim(output_name),'Hailcast updraft mask', '', "time: point",   &
+               axes(1:2), fcst_grid, kstt_hcm,kend_hcm, dyn_bundle, output_file, rcd=rc)
+          if(rc==0)  num_field_dyn=num_field_dyn+1
+        endif
+    endif
+
 !jwtest:
 !   call ESMF_FieldBundleGet(dyn_bundle, fieldCount=fieldCount, rc=rc)
 !   print *,'in dyn_bundle_setup, fieldCount=',fieldCount
@@ -1342,6 +1644,8 @@ contains
 !                    name="output_file", value=fld_outfilename, rc=rc)
 !     print *,'in dyn bundle setup, i=',i,' fieldname=',trim(fieldnamelist(i)),' out filename=',trim(fld_outfilename)
 !   enddo
+   deallocate(axis_name)
+   deallocate(all_axes)
 
  end subroutine fv_dyn_bundle_setup
 
@@ -1369,7 +1673,7 @@ contains
    real(4),dimension(:,:),    pointer :: temp_r2d
    logical, save :: first=.true.
 !
-!*** create esmf field  
+!*** create esmf field
    if( present(l3Dvector) ) then
      temp_r4d => windvect(1:3,isco:ieco,jsco:jeco,kstt:kend)
      call ESMF_LogWrite('create winde vector esmf field', ESMF_LOGMSG_INFO, rc=rc)
@@ -1377,7 +1681,7 @@ contains
       line=__LINE__, &
       file=__FILE__)) &
       return  ! bail out
-!jw      field = ESMF_FieldCreate(dyn_grid, temp_r4d, datacopyflag=ESMF_DATACOPY_VALUE, 
+!jw      field = ESMF_FieldCreate(dyn_grid, temp_r4d, datacopyflag=ESMF_DATACOPY_VALUE,
      field = ESMF_FieldCreate(dyn_grid, temp_r4d, datacopyflag=ESMF_DATACOPY_REFERENCE, &
                             gridToFieldMap=(/2,3/), ungriddedLBound=(/1,kstt/), ungriddedUBound=(/3,kend/), &
                             name="windvector", indexFlag=ESMF_INDEX_DELOCAL, rc=rc)
@@ -1423,12 +1727,12 @@ contains
    call ESMF_AttributeAdd(field, convention="NetCDF", purpose="FV3", &
         attrList=(/"missing_value"/), rc=rc)
    call ESMF_AttributeSet(field, convention="NetCDF", purpose="FV3", &
-        name='missing_value',value=missing_value,rc=rc)
+        name='missing_value',value=real(missing_value,kind=4),rc=rc)
 
    call ESMF_AttributeAdd(field, convention="NetCDF", purpose="FV3", &
         attrList=(/"_FillValue"/), rc=rc)
    call ESMF_AttributeSet(field, convention="NetCDF", purpose="FV3", &
-        name='_FillValue',value=missing_value,rc=rc)
+        name='_FillValue',value=real(missing_value,kind=4),rc=rc)
 
    call ESMF_AttributeAdd(field, convention="NetCDF", purpose="FV3", &
         attrList=(/"cell_methods"/), rc=rc)
