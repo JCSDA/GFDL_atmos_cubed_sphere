@@ -28,10 +28,12 @@ endif()
 
 set(FV3Version "${PACKAGE_VERSION}")
 set_and_check(FV3_INSTALL_PREFIX "${PACKAGE_PREFIX_DIR}")
-get_property(FV3_LIBRARIES TARGET @PROJECT_NAME@::fv3 PROPERTY LOCATION)
+#cltorg get_property(FV3_LIBRARIES TARGET @PROJECT_NAME@::fv3 PROPERTY LOCATION)
 
 check_required_components("@PROJECT_NAME@")
 
-get_target_property(location @PROJECT_NAME@::fv3 LOCATION)
+#cltorg get_target_property(location @PROJECT_NAME@::fv3 LOCATION)
+set(FV3_LIBRARIES @PROJECT_NAME@::fv3)
+
 message(STATUS "Found @PROJECT_NAME@: \"${FV3_INSTALL_PREFIX}\" (Version: \"${FV3Version}\")")
 message(STATUS "Found @PROJECT_NAME@::fv3 [Lib: ${FV3_LIBRARIES}]")
